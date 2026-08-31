@@ -49,7 +49,7 @@ pub fn run() {
                 stt::engine::SttEngineManager::run_worker(
                     worker_handle.clone(),
                     stt_receiver,
-                    Arc::new(parking_lot::RwLock::new(Vec::new())),
+                    history_state_clone.conversation_history.clone(),
                     move || config_mgr_clone.get_config(),
                     move |query| {
                         let h = worker_handle.clone();
@@ -77,6 +77,7 @@ pub fn run() {
             window::set_click_through,
             window::toggle_hud_visibility,
             window::set_hud_opacity,
+            window::start_dragging,
             // Config
             config::get_app_config,
             config::save_app_config,
@@ -85,6 +86,7 @@ pub fn run() {
             audio::start_audio_capture,
             audio::stop_audio_capture,
             audio::get_audio_capture_status,
+            audio::get_audio_levels,
             // STT
             stt::get_transcript_history,
             stt::clear_transcript_history,

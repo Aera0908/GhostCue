@@ -14,24 +14,6 @@ pub async fn generate_ai_suggestion(
     action: String,
     custom_query: Option<String>,
 ) -> Result<String, String> {
-    // If a custom query was submitted, register it into conversation history and broadcast
-    if let Some(ref query) = custom_query {
-        let trimmed = query.trim();
-        if !trimmed.is_empty() {
-            let segment = TranscriptSegment {
-                id: uuid::Uuid::new_v4().to_string(),
-                speaker: "Candidate Query".to_string(),
-                text: trimmed.to_string(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                is_final: true,
-                confidence: 1.0,
-                duration_secs: 0.5,
-            };
-            let _ = app_handle.emit("transcript-event", &segment);
-            state.inner().stt_engine.add_segment(segment);
-        }
-    }
-
     let config = state.inner().config_manager.get_config();
     let history = state.inner().stt_engine.get_history();
     state

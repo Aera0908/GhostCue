@@ -1,8 +1,11 @@
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use log::{debug, info};
 
 pub const VAD_FRAME_SIZE: usize = 512; // 32ms at 16kHz
 pub const SAMPLE_RATE: usize = 16000;
+const PRE_SPEECH_FRAMES: usize = 10; // ~320ms pre-roll buffer to preserve starting consonants
+const MAX_SEGMENT_DURATION_SECS: u64 = 7; // Split long continuous monologues into natural 7s sentences
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VadState {
@@ -22,33 +25,58 @@ pub struct VadSegment {
 pub struct VadDetector {
     pub is_interviewer: bool,
     pub threshold: f32, // 0.0 to 1.0 (default ~0.5)
-    pub min_speech_duration: Duration, // e.g. 300ms
-    pub silence_cutoff_duration: Duration, // e.g. 800ms
+    pub min_speech_duration: Duration, // e.g. 180ms
+    pub silence_cutoff_duration: Duration, // e.g. 600ms
 
     state: VadState,
     speech_start_instant: Option<Instant>,
     silence_start_instant: Option<Instant>,
     accumulated_samples: Vec<f32>,
-    
-    // Dynamic noise floor tracking
+    pre_speech_ring: VecDeque<Vec<f32>>,
+
+    // Hangover counters
+    consecutive_silence_frames: usize,
+    consecutive_speech_frames: usize,
+
+    // Dynamic background noise floor tracking
     noise_floor: f32,
-    alpha: f32, // Smoothing factor
+    
+    // High-pass filter state for noise cancellation
+    filter_prev_x: f32,
+    filter_prev_y: f32,
 }
 
 impl VadDetector {
-    pub fn new(is_interviewer: bool, threshold: f32, min_speech_ms: u64, silence_cutoff_ms: u64) -> Self {
+    pub fn new(is_interviewer: bool, threshold: f32, _min_speech_ms: u64, silence_cutoff_ms: u64) -> Self {
         Self {
             is_interviewer,
-            threshold: threshold.clamp(0.05, 0.95),
-            min_speech_duration: Duration::from_millis(min_speech_ms),
-            silence_cutoff_duration: Duration::from_millis(silence_cutoff_ms),
+            threshold: threshold.clamp(0.1, 0.9),
+            min_speech_duration: Duration::from_millis(100), // Quick ~100ms voice onset
+            silence_cutoff_duration: Duration::from_millis(silence_cutoff_ms.clamp(300, 1200)),
             state: VadState::Silence,
             speech_start_instant: None,
             silence_start_instant: None,
-            accumulated_samples: Vec::with_capacity(SAMPLE_RATE * 15),
-            noise_floor: 0.005,
-            alpha: 0.98,
+            accumulated_samples: Vec::with_capacity(SAMPLE_RATE * 8),
+            pre_speech_ring: VecDeque::with_capacity(PRE_SPEECH_FRAMES + 2),
+            consecutive_silence_frames: 0,
+            consecutive_speech_frames: 0,
+            noise_floor: 0.002,
+            filter_prev_x: 0.0,
+            filter_prev_y: 0.0,
         }
+    }
+
+    /// Apply an 85Hz highpass filter to remove AC hum, mechanical vibration, and DC offset
+    pub fn filter_noise(&mut self, frame: &[f32]) -> Vec<f32> {
+        let r = 0.967f32;
+        let mut filtered = Vec::with_capacity(frame.len());
+        for &x in frame {
+            let y = x - self.filter_prev_x + r * self.filter_prev_y;
+            self.filter_prev_x = x;
+            self.filter_prev_y = y;
+            filtered.push(y);
+        }
+        filtered
     }
 
     /// Calculate RMS (Root Mean Square) energy of 512-sample frame
@@ -60,7 +88,7 @@ impl VadDetector {
         (sum_sq / (frame.len() as f32)).sqrt()
     }
 
-    /// Compute zero-crossing rate of frame
+    /// Compute zero-crossing rate (ZCR)
     pub fn calculate_zcr(frame: &[f32]) -> f32 {
         if frame.len() < 2 {
             return 0.0;
@@ -74,103 +102,118 @@ impl VadDetector {
         count as f32 / (frame.len() as f32)
     }
 
-    /// Evaluate speech probability for a 512-sample chunk
-    pub fn compute_speech_probability(&mut self, frame: &[f32]) -> (f32, f32) {
-        let rms = Self::calculate_rms(frame);
-        let zcr = Self::calculate_zcr(frame);
+    /// Determine if frame contains human speech vs ambient room noise
+    pub fn classify_frame(&mut self, filtered_frame: &[f32]) -> (bool, f32) {
+        let rms = Self::calculate_rms(filtered_frame);
+        let zcr = Self::calculate_zcr(filtered_frame);
 
-        // Update noise floor slowly during low-energy periods
-        if rms < self.noise_floor * 1.5 {
-            self.noise_floor = self.alpha * self.noise_floor + (1.0 - self.alpha) * rms;
-            self.noise_floor = self.noise_floor.max(0.001);
+        // Adaptive noise floor tracking
+        if rms < self.noise_floor * 1.4 {
+            self.noise_floor = 0.96 * self.noise_floor + 0.04 * rms;
+        } else {
+            self.noise_floor = 0.998 * self.noise_floor + 0.002 * rms;
         }
+        self.noise_floor = self.noise_floor.clamp(0.0005, 0.020);
 
-        let snr = rms / self.noise_floor;
-        
-        // Non-linear sigmoid mapping for speech probability
-        let energy_factor = (snr - 2.5).clamp(-5.0, 5.0);
-        let zcr_bonus = if (0.02..=0.35).contains(&zcr) { 0.5 } else { -0.3 };
-        let logit = energy_factor + zcr_bonus;
-        let prob = 1.0 / (1.0 + (-logit).exp());
+        let snr_multiplier = 1.4 + (1.0 - self.threshold) * 1.2;
+        let min_energy_gate = 0.0025 + (1.0 - self.threshold) * 0.004;
 
-        (prob, rms)
+        let energy_ok = rms >= (self.noise_floor * snr_multiplier) && rms >= min_energy_gate;
+        let zcr_ok = zcr >= 0.01 && zcr <= 0.52;
+
+        let is_speech = energy_ok && zcr_ok;
+        (is_speech, rms)
     }
 
     /// Feed a frame into the VAD state machine.
-    /// Returns Some(VadSegment) when a complete speech turn has finished (after silence timeout).
+    /// Returns (Option<VadSegment>, display_level, is_active).
     pub fn process_frame(&mut self, frame: &[f32]) -> (Option<VadSegment>, f32, bool) {
-        let (prob, rms) = self.compute_speech_probability(frame);
-        let is_speech_frame = prob >= self.threshold;
+        let filtered = self.filter_noise(frame);
+        let (is_speech_frame, raw_rms) = self.classify_frame(&filtered);
         let now = Instant::now();
         let mut completed_segment = None;
 
+        if is_speech_frame {
+            self.consecutive_speech_frames += 1;
+            self.consecutive_silence_frames = 0;
+        } else {
+            self.consecutive_silence_frames += 1;
+            self.consecutive_speech_frames = 0;
+        }
+
         match self.state {
             VadState::Silence => {
+                if self.pre_speech_ring.len() >= PRE_SPEECH_FRAMES {
+                    self.pre_speech_ring.pop_front();
+                }
+                self.pre_speech_ring.push_back(frame.to_vec());
+
+                // Voice onset: 1 speech frame is enough to begin buffering
                 if is_speech_frame {
-                    self.state = VadState::SpeechPossible;
+                    self.state = VadState::SpeechConfirmed;
                     self.speech_start_instant = Some(now);
                     self.silence_start_instant = None;
                     self.accumulated_samples.clear();
+
+                    for pre_frame in self.pre_speech_ring.drain(..) {
+                        self.accumulated_samples.extend_from_slice(&pre_frame);
+                    }
                     self.accumulated_samples.extend_from_slice(frame);
                 }
             }
             VadState::SpeechPossible => {
                 self.accumulated_samples.extend_from_slice(frame);
-                if is_speech_frame {
-                    if let Some(start) = self.speech_start_instant {
-                        if now.duration_since(start) >= self.min_speech_duration {
-                            self.state = VadState::SpeechConfirmed;
-                            debug!("VAD speech confirmed for speaker (interviewer={})", self.is_interviewer);
-                        }
-                    }
-                } else {
-                    // False trigger, fell back to silence before threshold
-                    self.state = VadState::Silence;
-                    self.speech_start_instant = None;
-                    self.accumulated_samples.clear();
-                }
+                self.state = VadState::SpeechConfirmed;
             }
             VadState::SpeechConfirmed => {
                 self.accumulated_samples.extend_from_slice(frame);
 
                 if is_speech_frame {
-                    self.silence_start_instant = None; // Reset silence counter
-                } else {
-                    if self.silence_start_instant.is_none() {
-                        self.silence_start_instant = Some(now);
-                    } else if let Some(silence_start) = self.silence_start_instant {
-                        if now.duration_since(silence_start) >= self.silence_cutoff_duration {
-                            // Speech ended! Finalize segment
-                            let total_duration = self.speech_start_instant
-                                .map(|s| now.duration_since(s))
-                                .unwrap_or_else(|| Duration::from_millis(1000));
+                    self.silence_start_instant = None;
+                } else if self.silence_start_instant.is_none() {
+                    self.silence_start_instant = Some(now);
+                }
 
-                            info!(
-                                "VAD segment completed for (interviewer={}): {} samples ({:.2}s)",
-                                self.is_interviewer,
-                                self.accumulated_samples.len(),
-                                total_duration.as_secs_f32()
-                            );
+                let silence_timed_out = self.silence_start_instant
+                    .map(|silence_start| now.duration_since(silence_start) >= self.silence_cutoff_duration)
+                    .unwrap_or(false);
 
-                            completed_segment = Some(VadSegment {
-                                speaker_is_interviewer: self.is_interviewer,
-                                samples: self.accumulated_samples.clone(),
-                                start_time: self.speech_start_instant.unwrap_or(now),
-                                duration: total_duration,
-                            });
+                let is_max_duration = self.accumulated_samples.len() >= (SAMPLE_RATE * MAX_SEGMENT_DURATION_SECS as usize);
 
-                            // Reset state
-                            self.state = VadState::Silence;
-                            self.speech_start_instant = None;
-                            self.silence_start_instant = None;
-                            self.accumulated_samples.clear();
-                        }
+                if silence_timed_out || is_max_duration {
+                    let total_duration = self.speech_start_instant
+                        .map(|s| now.duration_since(s))
+                        .unwrap_or_else(|| Duration::from_millis(600));
+
+                    // Keep any utterance with at least ~200ms of audio (catches "hello", "yes", "no")
+                    if self.accumulated_samples.len() >= (SAMPLE_RATE * 200 / 1000) {
+                        info!(
+                            "VAD segment finalized (interviewer={}): {} samples ({:.2}s)",
+                            self.is_interviewer,
+                            self.accumulated_samples.len(),
+                            total_duration.as_secs_f32()
+                        );
+
+                        completed_segment = Some(VadSegment {
+                            speaker_is_interviewer: self.is_interviewer,
+                            samples: self.accumulated_samples.clone(),
+                            start_time: self.speech_start_instant.unwrap_or(now),
+                            duration: total_duration,
+                        });
                     }
+
+                    self.state = VadState::Silence;
+                    self.speech_start_instant = None;
+                    self.silence_start_instant = None;
+                    self.accumulated_samples.clear();
+                    self.pre_speech_ring.clear();
                 }
             }
         }
 
-        let is_active = self.state == VadState::SpeechConfirmed || self.state == VadState::SpeechPossible;
-        (completed_segment, rms, is_active)
+        let is_active = self.state == VadState::SpeechConfirmed || is_speech_frame;
+        (completed_segment, raw_rms, is_active)
     }
 }
+
+

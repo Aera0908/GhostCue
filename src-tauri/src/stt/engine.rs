@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use chrono::Utc;
 use crossbeam_channel::Receiver;
-use log::{info, warn};
+use log::{debug, info, warn};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -23,7 +23,7 @@ pub struct TranscriptSegment {
 }
 
 pub struct SttEngineManager {
-    conversation_history: Arc<RwLock<Vec<TranscriptSegment>>>,
+    pub conversation_history: Arc<RwLock<Vec<TranscriptSegment>>>,
 }
 
 impl SttEngineManager {
@@ -69,25 +69,44 @@ impl SttEngineManager {
             };
 
             let duration_secs = segment.duration.as_secs_f32();
+            
+            // Check average RMS of the segment to skip silent frames
+            let rms_energy = if !segment.samples.is_empty() {
+                let sum: f32 = segment.samples.iter().map(|&s| s * s).sum();
+                (sum / (segment.samples.len() as f32)).sqrt()
+            } else {
+                0.0
+            };
+
+            // Only skip if practically silent (< 0.0018 RMS) or completely empty (< 0.18s)
+            if duration_secs < 0.18 || rms_energy < 0.0018 {
+                continue;
+            }
+
             info!(
-                "Processing speech segment from {} ({:.2}s, {} samples)",
+                "Transcribing speech segment from {} ({:.2}s, {} samples, RMS={:.4})",
                 speaker,
                 duration_secs,
-                segment.samples.len()
+                segment.samples.len(),
+                rms_energy
             );
 
             // Execute transcription via selected STT provider
             let transcript_result = if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
                 let deepgram = DeepgramClient::new(config.deepgram_api_key.clone());
                 deepgram.transcribe_buffer(&segment.samples).await
-            } else {
-                // Whisper or fallback simulation
-                let whisper = LocalWhisperEngine::new(if config.whisper_model_path.is_empty() {
-                    None
-                } else {
-                    Some(std::path::PathBuf::from(&config.whisper_model_path))
-                });
+            } else if !config.openai_api_key.is_empty() {
+                super::whisper::transcribe_with_cloud_whisper(
+                    &config.openai_api_key,
+                    &config.openai_base_url,
+                    &segment.samples,
+                ).await
+            } else if !config.whisper_model_path.is_empty() {
+                let whisper = LocalWhisperEngine::new(Some(std::path::PathBuf::from(&config.whisper_model_path)));
                 whisper.transcribe(&segment.samples)
+            } else {
+                warn!("No active STT provider available. Configure OpenAI API Key or Deepgram Key in Settings.");
+                Err("No STT key configured in Settings or .env".to_string())
             };
 
             match transcript_result {
@@ -96,6 +115,8 @@ impl SttEngineManager {
                     if cleaned_text.is_empty() {
                         continue;
                     }
+
+                    info!("✓ STT Transcribed for {}: '{}' ({:.2}s)", speaker, cleaned_text, duration_secs);
 
                     let segment_id = uuid::Uuid::new_v4().to_string();
                     let timestamp = Utc::now().format("%H:%M:%S").to_string();
@@ -120,28 +141,31 @@ impl SttEngineManager {
                     }
 
                     // Emit transcript-event to frontend
+                    let _ = app_handle.emit_to("main", "transcript-event", &transcript_segment);
                     let _ = app_handle.emit("transcript-event", &transcript_segment);
 
-                    // Auto-trigger LLM heuristic:
-                    // If interviewer speaks and ends with a question, trigger suggestion
+                    // Auto-trigger LLM exclusively on interviewer turns (never triggers on Candidate / You)
                     if config.auto_trigger_enabled && segment.speaker_is_interviewer {
-                        let is_question = cleaned_text.contains('?')
-                            || cleaned_text.to_lowercase().starts_with("how")
-                            || cleaned_text.to_lowercase().starts_with("what")
-                            || cleaned_text.to_lowercase().starts_with("why")
-                            || cleaned_text.to_lowercase().starts_with("can you")
-                            || cleaned_text.to_lowercase().starts_with("tell me")
-                            || cleaned_text.to_lowercase().starts_with("explain")
-                            || cleaned_text.to_lowercase().starts_with("describe");
-
-                        if is_question || cleaned_text.len() > 20 {
-                            info!("Auto-trigger condition met for interviewer question: '{}'", cleaned_text);
+                        let word_count = cleaned_text.split_whitespace().count();
+                        if word_count >= 2 {
+                            info!("Auto-triggering AI answer for interviewer statement: '{}'", cleaned_text);
                             trigger_llm_fn(cleaned_text);
                         }
                     }
                 }
                 Err(err) => {
-                    warn!("STT transcription error: {}", err);
+                    warn!("STT transcription error for {}: {}", speaker, err);
+                    let err_segment = TranscriptSegment {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        speaker: "System".to_string(),
+                        text: format!("[STT Error]: {}", err),
+                        timestamp: Utc::now().format("%H:%M:%S").to_string(),
+                        is_final: true,
+                        confidence: 0.0,
+                        duration_secs,
+                    };
+                    let _ = app_handle.emit_to("main", "transcript-event", &err_segment);
+                    let _ = app_handle.emit("transcript-event", &err_segment);
                 }
             }
         }

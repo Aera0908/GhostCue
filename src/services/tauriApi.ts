@@ -23,7 +23,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   vad_sensitivity: 0.5,
   vad_speech_threshold_ms: 300,
   vad_silence_cutoff_ms: 800,
-  stt_provider: "local_whisper",
+  stt_provider: "cloud_whisper",
   whisper_model_path: "",
   whisper_model_size: "base.en",
   deepgram_api_key: "",
@@ -66,6 +66,15 @@ export const TauriApi = {
   async setHudOpacity(opacity: number): Promise<void> {
     if (!isTauri()) return;
     await invoke("set_hud_opacity", { opacity });
+  },
+
+  async startDragging(): Promise<void> {
+    if (!isTauri()) return;
+    try {
+      await invoke("start_dragging");
+    } catch (e) {
+      console.warn("startDragging error:", e);
+    }
   },
 
   // Config
@@ -114,6 +123,13 @@ export const TauriApi = {
   async getAudioCaptureStatus(): Promise<boolean> {
     if (!isTauri()) return true;
     return await invoke<boolean>("get_audio_capture_status");
+  },
+
+  async getAudioLevels(): Promise<{ mic_level: number; mic_active: boolean; loopback_level: number; loopback_active: boolean }> {
+    if (!isTauri()) {
+      return { mic_level: 0, mic_active: false, loopback_level: 0, loopback_active: false };
+    }
+    return await invoke<{ mic_level: number; mic_active: boolean; loopback_level: number; loopback_active: boolean }>("get_audio_levels");
   },
 
   // Transcripts & STT

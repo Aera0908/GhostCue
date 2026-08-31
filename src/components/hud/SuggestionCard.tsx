@@ -10,6 +10,7 @@ interface SuggestionCardProps {
   model: string;
   error: string | null;
   onRetry: () => void;
+  bgOpacity?: number;
 }
 
 export const SuggestionCard: React.FC<SuggestionCardProps> = ({
@@ -20,6 +21,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   model,
   error,
   onRetry,
+  bgOpacity = 0.94,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -34,100 +36,100 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   const getActionLabel = (action: string) => {
     switch (action) {
       case "code":
-        return "Coding Solution & Strategy";
+        return "Code & Solution";
       case "clarify":
-        return "Clarifying Questions";
+        return "Questions to Ask Interviewer";
       case "elaborate":
-        return "Architectural Deep Dive";
+        return "Deep Dive & Trade-Offs";
       default:
-        return "Instant Interview Hint";
+        return "Suggested Answer";
     }
   };
 
   return (
     <div
-      className={`flex flex-col rounded-lg border transition-all duration-200 overflow-hidden ${
-        isStreaming
-          ? "bg-slate-900/95 border-sky-500/50 shadow-[0_0_18px_rgba(56,189,248,0.2)]"
-          : error
-          ? "bg-rose-950/40 border-rose-800/50"
-          : "bg-slate-900/80 border-white/10"
-      }`}
+      style={{
+        backgroundColor: error
+          ? `rgba(40, 16, 16, ${Math.min(1, bgOpacity + 0.08)})`
+          : `rgba(12, 12, 12, ${bgOpacity})`,
+      }}
+      className="flex flex-col select-none transition-colors font-sans h-full"
     >
-      {/* Card Header Bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950/70 border-b border-white/5 text-[11px]">
+      {/* Card Header */}
+      <div
+        style={{ backgroundColor: `rgba(22, 22, 22, ${Math.min(1, bgOpacity + 0.05)})` }}
+        className="flex items-center justify-between px-3 py-1.5 text-xs select-none border-b border-[#252525]"
+      >
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-sky-400 font-semibold">
+          <div className="flex items-center gap-1.5 text-white font-bold">
             {activeAction === "code" ? (
-              <Code2 className={`w-3.5 h-3.5 ${isStreaming ? "animate-spin text-sky-300" : "text-sky-400"}`} />
+              <Code2 className={`w-3.5 h-3.5 ${isStreaming ? "animate-spin text-[#38bdf8]" : "text-[#38bdf8]"}`} />
             ) : (
-              <Sparkles className={`w-3.5 h-3.5 ${isStreaming ? "animate-spin text-sky-300" : ""}`} />
+              <Sparkles className={`w-3.5 h-3.5 ${isStreaming ? "animate-spin text-[#facc15]" : "text-[#facc15]"}`} />
             )}
             <span>{getActionLabel(activeAction)}</span>
           </div>
 
-          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
+          <span className="hidden sm:inline-flex text-[11px] font-mono px-1.5 py-0.5 bg-[#252525] text-[#999999]">
             {provider}/{model}
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {content && (
             <button
               type="button"
               onClick={handleCopy}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium transition-colors"
+              className="flex items-center gap-1 px-2 py-0.5 bg-[#252525] hover:bg-[#353535] text-white text-xs font-semibold transition-colors"
               title="Copy entire response"
             >
-              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              <span>{copied ? "Copied" : "Copy All"}</span>
+              {copied ? <Check className="w-3 h-3 text-[#4ade80]" /> : <Copy className="w-3 h-3" />}
+              <span>{copied ? "Copied" : "Copy"}</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 rounded bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-slate-200"
+            className="p-1 bg-[#252525] hover:bg-[#353535] text-[#aaaaaa] hover:text-white transition-colors"
             title={isExpanded ? "Collapse" : "Expand"}
           >
-            {isExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+            {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
       {/* Content Area */}
       <div
-        className={`p-3 text-xs text-slate-100 font-sans overflow-y-auto leading-relaxed select-text scrollbar-thin scrollbar-thumb-slate-800 ${
-          isExpanded ? "max-h-[500px]" : "max-h-[320px]"
+        className={`p-3 text-sm sm:text-base text-white overflow-y-auto leading-relaxed select-text scrollbar-thin scrollbar-thumb-[#333333] ${
+          isExpanded ? "max-h-[580px]" : "max-h-[360px]"
         }`}
       >
         {error ? (
-          <div className="flex items-start gap-2 p-2.5 rounded bg-rose-950/50 border border-rose-800/50 text-rose-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 p-3 bg-[#381818] text-[#fca5a5] text-xs border border-[#502020]">
+            <AlertCircle className="w-4 h-4 text-[#f87171] shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold">AI Generation Failed</p>
-              <p className="text-[11px] text-rose-400/90 mt-0.5">{error}</p>
+              <p className="font-bold text-white">Connection Error</p>
+              <p className="text-xs text-[#f87171] mt-0.5">{error}</p>
               <button
                 type="button"
                 onClick={onRetry}
-                className="mt-2 flex items-center gap-1 px-2 py-0.5 rounded bg-rose-900/60 hover:bg-rose-800 text-[10px] text-rose-200 font-medium"
+                className="mt-2 flex items-center gap-1 px-2.5 py-1 bg-[#5c2424] hover:bg-[#6e2c2c] text-white text-xs font-semibold transition-colors"
               >
                 <RefreshCw className="w-3 h-3" />
-                <span>Retry</span>
+                <span>Try Again</span>
               </button>
             </div>
           </div>
         ) : !content && isStreaming ? (
-          <div className="flex items-center gap-2.5 text-slate-300 py-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping" />
-            <span className="text-xs font-medium text-sky-200">
-              Analyzing prompt & generating real-time response...
-            </span>
+          <div className="flex items-center gap-2.5 text-white py-4 px-1 text-xs">
+            <span className="w-2 h-2 bg-[#ffffff] animate-ping" />
+            <span className="font-medium">Formulating answer in real-time...</span>
           </div>
         ) : !content ? (
-          <div className="flex items-center justify-between text-slate-500 py-3 px-1 text-xs">
-            <span className="italic">AI suggestions will appear automatically or when you type a query.</span>
-            <span className="text-[10px] font-mono text-slate-600">Press Ctrl+Shift+Space to force hint</span>
+          <div className="flex items-center justify-between text-[#888888] py-4 px-1 text-xs">
+            <span>AI answers will appear here automatically or when you ask.</span>
+            <span className="text-[11px] text-[#666666] font-mono">Ctrl+Shift+Space for Quick Hint</span>
           </div>
         ) : (
           <IdeCodeStudio

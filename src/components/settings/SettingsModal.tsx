@@ -51,114 +51,114 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative flex flex-col w-full max-w-2xl max-h-[85vh] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 font-sans">
+      <div className="relative flex flex-col w-full max-w-2xl max-h-[85vh] bg-[#0e0e0e] border border-[#262626] shadow-2xl overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-900/80 border-b border-slate-800">
-          <div className="flex items-center gap-2 text-slate-100 font-semibold text-sm">
-            <SettingsIcon className="w-4 h-4 text-sky-400" />
-            <span>GhostCue Configuration</span>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-b border-[#222222] select-none font-mono">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <SettingsIcon className="w-4 h-4 text-[#888888]" />
+            <span>GHOSTCUE SETTINGS</span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="p-1 text-[#888888] hover:text-white hover:bg-[#222222] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Tabs */}
-        <div className="flex border-b border-slate-800 bg-slate-900/40 px-2 text-xs">
+        {/* Modal Tabs Bar */}
+        <div className="flex bg-[#121212] border-b border-[#222222] text-xs font-mono select-none">
           <button
             type="button"
             onClick={() => setActiveTab("context")}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
               activeTab === "context"
-                ? "border-sky-400 text-sky-400 bg-sky-950/20"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                ? "border-white text-white font-bold bg-[#1a1a1a]"
+                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>Context & Role</span>
+            <span>CONTEXT</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("audio")}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
               activeTab === "audio"
-                ? "border-sky-400 text-sky-400 bg-sky-950/20"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                ? "border-white text-white font-bold bg-[#1a1a1a]"
+                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>Audio & VAD</span>
+            <span>AUDIO & VAD</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("models")}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
               activeTab === "models"
-                ? "border-sky-400 text-sky-400 bg-sky-950/20"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                ? "border-white text-white font-bold bg-[#1a1a1a]"
+                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
-            <span>STT & LLM</span>
+            <span>MODELS & API</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("general")}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
               activeTab === "general"
-                ? "border-sky-400 text-sky-400 bg-sky-950/20"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                ? "border-white text-white font-bold bg-[#1a1a1a]"
+                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
             }`}
           >
             <SettingsIcon className="w-3.5 h-3.5" />
-            <span>Stealth & Hotkeys</span>
+            <span>STEALTH & KEYS</span>
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 p-4 overflow-y-auto max-h-[60vh] scrollbar-thin scrollbar-thumb-slate-800">
+        {/* Modal Content */}
+        <div className="flex-1 p-4 overflow-y-auto max-h-[62vh] scrollbar-thin scrollbar-thumb-[#2a2a2a] bg-[#0a0a0a]">
           {activeTab === "context" && <ContextSettings config={formData} onChange={handleChange} />}
           {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} />}
           {activeTab === "models" && <ModelSettings config={formData} onChange={handleChange} />}
           {activeTab === "general" && <GeneralSettings config={formData} onChange={handleChange} />}
         </div>
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-900/80 border-t border-slate-800">
+        {/* Modal Footer Bar */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-t border-[#222222] select-none font-mono text-xs">
           <button
             type="button"
             onClick={handleResetDefaults}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#282828] text-[#888888] hover:text-white transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Defaults</span>
+            <span>RESET DEFAULTS</span>
           </button>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-md border border-slate-700 bg-transparent hover:bg-slate-800 text-slate-300 text-xs transition-colors"
+              className="px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#282828] text-[#cccccc] hover:text-white transition-colors"
             >
-              Cancel
+              CANCEL
             </button>
             <button
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-white font-bold transition-colors disabled:opacity-40"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? "Saving..." : "Save Changes"}</span>
+              <span>{isSaving ? "SAVING..." : "SAVE CONFIG"}</span>
             </button>
           </div>
         </div>

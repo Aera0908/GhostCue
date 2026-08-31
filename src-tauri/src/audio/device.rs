@@ -85,5 +85,21 @@ pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
         }
     }
 
+    // Place the default device at the top of the list if found
+    devices.sort_by(|a, b| b.is_default.cmp(&a.is_default));
     devices
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_enumeration() {
+        let inputs = list_input_devices();
+        let outputs = list_output_devices();
+        let _ = inputs.len();
+        let _ = outputs.len();
+    }
+}
+

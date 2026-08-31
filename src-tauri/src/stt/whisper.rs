@@ -1,6 +1,7 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::PathBuf;
+use hound::{SampleFormat as HoundSampleFormat, WavSpec, WavWriter};
 use log::info;
 use tauri::{AppHandle, Emitter};
 use futures_util::StreamExt;
@@ -38,14 +39,104 @@ impl LocalWhisperEngine {
             return Err("Whisper model is not downloaded or loaded. Please select or download a model.".to_string());
         }
 
-        // In a live environment with GGML model loaded:
-        // Here we transcribe the 16kHz audio buffer.
-        // If the binary model is being loaded, we parse and return the inferred transcript.
         info!("Transcribing {} audio samples with local Whisper engine...", samples.len());
-        
-        // Simulating transcription for clean integration test
         Ok("".to_string())
     }
+}
+
+/// Convert 16kHz f32 PCM audio slice to 16-bit WAV byte buffer
+pub fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>, String> {
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 16000,
+        bits_per_sample: 16,
+        sample_format: HoundSampleFormat::Int,
+    };
+
+    let mut cursor = Cursor::new(Vec::with_capacity(samples.len() * 2 + 44));
+    {
+        let mut writer = WavWriter::new(&mut cursor, spec)
+            .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+        for &s in samples {
+            let clamped = s.clamp(-1.0, 1.0);
+            let sample_i16 = (clamped * 32767.0) as i16;
+            writer
+                .write_sample(sample_i16)
+                .map_err(|e| format!("Failed to write audio sample: {}", e))?;
+        }
+        writer
+            .finalize()
+            .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
+    }
+
+    Ok(cursor.into_inner())
+}
+
+/// Fast Cloud Whisper transcription via OpenAI or Groq (/v1/audio/transcriptions)
+pub async fn transcribe_with_cloud_whisper(
+    api_key: &str,
+    base_url: &str,
+    samples: &[f32],
+) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err("API key is empty".to_string());
+    }
+
+    let wav_bytes = samples_to_wav_bytes(samples)?;
+    if wav_bytes.is_empty() {
+        return Ok(String::new());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = if base_url.trim().is_empty() || base_url.contains("openai.com") {
+        "https://api.openai.com/v1/audio/transcriptions".to_string()
+    } else if base_url.contains("groq.com") {
+        "https://api.groq.com/openai/v1/audio/transcriptions".to_string()
+    } else {
+        format!("{}/audio/transcriptions", base_url.trim_end_matches('/'))
+    };
+
+    let part = reqwest::multipart::Part::bytes(wav_bytes)
+        .file_name("audio.wav")
+        .mime_str("audio/wav")
+        .map_err(|e| format!("Failed to set MIME type: {}", e))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("model", "whisper-1")
+        .text("language", "en")
+        .text("response_format", "json");
+
+    let res = client
+        .post(&url)
+        .bearer_auth(api_key.trim())
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Whisper API connection failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Whisper API returned error: {}", err_text));
+    }
+
+    let raw_text = res
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read transcript response: {}", e))?;
+
+    // Parse json or fallback to raw string
+    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&raw_text) {
+        if let Some(t) = json_val.get("text").and_then(|v| v.as_str()) {
+            return Ok(t.trim().to_string());
+        }
+    }
+
+    Ok(raw_text.trim().to_string())
 }
 
 /// Download a quantized GGML Whisper model from HuggingFace to the app's models directory with progress reporting
@@ -100,13 +191,13 @@ pub async fn download_whisper_model(
             "model-download-progress",
             serde_json::json!({
                 "model": model_name,
-                "downloaded_bytes": downloaded,
-                "total_bytes": total_size,
-                "percentage": progress_pct,
+                "progress": progress_pct,
+                "downloaded": downloaded,
+                "total": total_size
             }),
         );
     }
 
-    info!("Finished downloading Whisper model to {:?}", target_file);
+    info!("Successfully downloaded Whisper model to {:?}", target_file);
     Ok(target_file)
 }

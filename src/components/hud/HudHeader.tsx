@@ -1,100 +1,135 @@
 import React from "react";
-import { Eye, ShieldCheck, Settings, Mic, MicOff, MousePointerClick, GripHorizontal, EyeOff } from "lucide-react";
+import { Eye, ShieldCheck, Settings, Mic, MicOff, MousePointerClick, EyeOff, LayoutGrid, Sparkles } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AppConfig } from "../../types/config";
+import { TauriApi } from "../../services/tauriApi";
 
 interface HudHeaderProps {
   config: AppConfig;
   opacity: number;
+  bgOpacity?: number;
   onOpacityChange: (val: number) => void;
   clickThrough: boolean;
   onToggleClickThrough: () => void;
   onToggleAntiCapture: () => void;
+  onToggleAutoTrigger: () => void;
   onOpenSettings: () => void;
+  onOpenSessions: () => void;
   onPanicHide: () => void;
   isCapturing: boolean;
   onToggleCapture: () => void;
   activeProvider: string;
+  sessionTitle?: string;
 }
 
 export const HudHeader: React.FC<HudHeaderProps> = ({
   config,
   opacity,
+  bgOpacity,
   onOpacityChange,
   clickThrough,
   onToggleClickThrough,
   onToggleAntiCapture,
+  onToggleAutoTrigger,
   onOpenSettings,
+  onOpenSessions,
   onPanicHide,
   isCapturing,
   onToggleCapture,
   activeProvider,
+  sessionTitle,
 }) => {
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const triggerDrag = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest("button, input, textarea, select, a, [role='slider']")) {
       return;
     }
-    if (e.button === 0) {
-      try {
-        const appWindow = getCurrentWebviewWindow();
-        appWindow.startDragging();
-      } catch (err) {
-        console.warn("Window drag error:", err);
-      }
+    TauriApi.startDragging();
+    try {
+      getCurrentWebviewWindow().startDragging();
+    } catch {
+      // Fallback
     }
   };
+
+  const alpha = bgOpacity ?? opacity;
 
   return (
     <header
       data-tauri-drag-region
-      onMouseDown={handleMouseDown}
-      className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-slate-950/90 backdrop-blur-md select-none cursor-move rounded-t-xl"
+      onMouseDown={triggerDrag}
+      style={{ backgroundColor: `rgba(20, 20, 20, ${alpha})` }}
+      className="flex items-center justify-between px-3 py-2 select-none cursor-move border-b border-[#252525]"
     >
-      {/* Brand & Anti-Capture Stealth Badge */}
-      <div className="flex items-center gap-2.5 pointer-events-none">
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex items-center justify-center w-6 h-6 rounded-md bg-gradient-to-tr from-sky-500 to-indigo-600 shadow-md shadow-sky-500/20">
-            <span className="text-xs font-black tracking-tighter text-white">GC</span>
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-75" />
-          </div>
-          <span className="text-sm font-semibold tracking-wide text-slate-100 font-sans">
-            Ghost<span className="text-sky-400">Cue</span>
-          </span>
-        </div>
+      {/* Brand & Sessions Button */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenSessions}
+          className="flex items-center gap-1.5 px-2 py-1 bg-[#1e1e1e] hover:bg-[#282828] text-white text-xs font-semibold transition-colors"
+          title="Open Interview History & Context Hub"
+        >
+          <LayoutGrid className="w-3.5 h-3.5 text-[#38bdf8]" />
+          <span>Sessions</span>
+        </button>
 
-        {/* Anti-Capture Badge */}
+        {sessionTitle && (
+          <span className="text-xs text-[#888888] truncate max-w-[130px] hidden sm:inline">
+            / {sessionTitle}
+          </span>
+        )}
+
+        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#1e1e1e] text-[#777777] uppercase hidden md:inline">
+          {activeProvider}
+        </span>
+
+        {/* Anti-Capture Stealth Status */}
         <button
           type="button"
           onClick={onToggleAntiCapture}
-          className={`pointer-events-auto flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-all border ${
+          className={`flex items-center gap-1 px-1.5 py-1 text-xs transition-colors ${
             config.anti_capture_enabled
-              ? "bg-emerald-950/70 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80 shadow-[0_0_8px_rgba(16,185,129,0.25)]"
-              : "bg-rose-950/70 border-rose-500/40 text-rose-300 hover:bg-rose-900/80"
+              ? "bg-[#162216] text-[#4ade80] hover:bg-[#1c2e1c]"
+              : "bg-[#281616] text-[#f87171] hover:bg-[#341d1d]"
           }`}
-          title="Window is invisible to Zoom, Teams, Meet, Discord & OBS via WDA_EXCLUDEFROMCAPTURE"
+          title="Ghost Mode: Hides this window from Zoom, Teams, Meet, and screen recordings."
         >
           <ShieldCheck className="w-3 h-3" />
-          <span>{config.anti_capture_enabled ? "STEALTH ON" : "STEALTH OFF"}</span>
+          <span>{config.anti_capture_enabled ? "Ghost Mode" : "Visible"}</span>
         </button>
-
-        {/* Provider Badge */}
-        <span className="hidden sm:inline-flex px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-800/80 border border-slate-700/60 text-slate-300 uppercase">
-          {activeProvider}
-        </span>
       </div>
 
-      {/* Center Drag Handle */}
-      <div className="flex items-center gap-1 text-slate-500 text-[11px] pointer-events-none hover:text-slate-300 transition-colors">
-        <GripHorizontal className="w-4 h-4 text-slate-400" />
-        <span className="hidden md:inline">Hold & Drag HUD</span>
+      {/* Center Dotted Square Drag Handle */}
+      <div
+        data-tauri-drag-region
+        onMouseDown={triggerDrag}
+        className="flex items-center justify-center p-1.5 text-[#666666] hover:text-[#bbbbbb] transition-colors cursor-move"
+        title="Drag Window"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          className="pointer-events-none"
+        >
+          <circle cx="3" cy="3" r="1.2" />
+          <circle cx="8" cy="3" r="1.2" />
+          <circle cx="13" cy="3" r="1.2" />
+          <circle cx="3" cy="8" r="1.2" />
+          <circle cx="8" cy="8" r="1.2" />
+          <circle cx="13" cy="8" r="1.2" />
+          <circle cx="3" cy="13" r="1.2" />
+          <circle cx="8" cy="13" r="1.2" />
+          <circle cx="13" cy="13" r="1.2" />
+        </svg>
       </div>
 
       {/* Control Actions & Sliders */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex items-center gap-1.5">
         {/* Opacity Controller */}
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-900/60 border border-white/5">
-          <Eye className="w-3 h-3 text-slate-400" />
+        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1c1c1c] text-[#cccccc]" title="HUD Transparency">
+          <Eye className="w-3.5 h-3.5 text-[#777777]" />
           <input
             type="range"
             min="0.2"
@@ -102,49 +137,63 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
             step="0.02"
             value={opacity}
             onChange={(e) => onOpacityChange(parseFloat(e.target.value))}
-            className="w-14 sm:w-16 h-1 accent-sky-400 bg-slate-700 rounded-lg cursor-pointer"
-            title={`HUD Opacity: ${Math.round(opacity * 100)}%`}
+            className="w-12 h-1 accent-[#ffffff] bg-[#333333] cursor-pointer"
           />
-          <span className="text-[10px] font-mono text-slate-400 w-6 text-right">
+          <span className="text-[11px] font-mono text-[#888888] w-6 text-right">
             {Math.round(opacity * 100)}%
           </span>
         </div>
+
+        {/* Auto-Answer Quick Toggle */}
+        <button
+          type="button"
+          onClick={onToggleAutoTrigger}
+          className={`flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors ${
+            config.auto_trigger_enabled
+              ? "bg-[#163650] border border-[#38bdf8]/60 text-[#38bdf8] hover:bg-[#1a4466]"
+              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc] hover:bg-[#252525]"
+          }`}
+          title="Auto-Answer: Automatically generates AI answers when interviewer questions are detected."
+        >
+          <Sparkles className={`w-3.5 h-3.5 ${config.auto_trigger_enabled ? "text-[#38bdf8]" : "text-[#777777]"}`} />
+          <span className="hidden sm:inline">Auto: {config.auto_trigger_enabled ? "ON" : "OFF"}</span>
+        </button>
 
         {/* Audio Capture Toggle */}
         <button
           type="button"
           onClick={onToggleCapture}
-          className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
             isCapturing
-              ? "bg-sky-950/60 border-sky-500/50 text-sky-300 hover:bg-sky-900/60 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
-              : "bg-slate-900/60 border-slate-700/60 text-slate-400 hover:text-slate-200"
+              ? "bg-[#1c1c1c] text-[#4ade80] hover:bg-[#252525]"
+              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc]"
           }`}
-          title={isCapturing ? "Audio Capture Active" : "Audio Capture Paused"}
+          title={isCapturing ? "Listening to audio" : "Audio paused"}
         >
-          {isCapturing ? <Mic className="w-3.5 h-3.5 text-sky-400 animate-pulse" /> : <MicOff className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{isCapturing ? "Listening" : "Paused"}</span>
+          {isCapturing ? <Mic className="w-3.5 h-3.5 text-[#4ade80]" /> : <MicOff className="w-3.5 h-3.5 text-[#777777]" />}
+          <span className="hidden sm:inline">{isCapturing ? "Live" : "Paused"}</span>
         </button>
 
-        {/* Click Through Toggle */}
+        {/* Click-Through Toggle */}
         <button
           type="button"
           onClick={onToggleClickThrough}
-          className={`p-1.5 rounded-md border text-xs transition-all ${
+          className={`p-1.5 text-xs transition-colors ${
             clickThrough
-              ? "bg-purple-950/70 border-purple-500/50 text-purple-300 shadow-[0_0_8px_rgba(168,85,247,0.2)]"
-              : "bg-slate-900/60 border-slate-700/60 text-slate-400 hover:text-slate-200"
+              ? "bg-[#2a1e36] text-[#c084fc]"
+              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc] hover:bg-[#252525]"
           }`}
-          title="Click-Through Mode (Ctrl+Shift+C)"
+          title="Click-Through: Lets you click behind the HUD (Ctrl+Shift+C)"
         >
           <MousePointerClick className="w-3.5 h-3.5" />
         </button>
 
-        {/* Settings Modal Toggle */}
+        {/* Settings Button */}
         <button
           type="button"
           onClick={onOpenSettings}
-          className="p-1.5 rounded-md bg-slate-900/60 border border-slate-700/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all"
-          title="Configure Context & Models (Ctrl+,)"
+          className="p-1.5 bg-[#1c1c1c] text-[#777777] hover:text-[#ffffff] hover:bg-[#252525] transition-colors"
+          title="Settings"
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
@@ -153,8 +202,8 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
         <button
           type="button"
           onClick={onPanicHide}
-          className="p-1.5 rounded-md bg-rose-950/60 border border-rose-800/60 text-rose-300 hover:bg-rose-900/80 transition-all"
-          title="Panic Hide HUD (Ctrl+Shift+H)"
+          className="p-1.5 bg-[#261414] text-[#f87171] hover:bg-[#381c1c] transition-colors"
+          title="Hide HUD immediately (Ctrl+Shift+H)"
         >
           <EyeOff className="w-3.5 h-3.5" />
         </button>

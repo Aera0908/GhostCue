@@ -108,3 +108,10 @@ pub async fn set_hud_opacity(window: WebviewWindow, _opacity: f64) -> Result<(),
     let _ = window.set_always_on_top(true);
     Ok(())
 }
+
+/// Tauri Command: Start native window dragging
+#[tauri::command]
+pub async fn start_dragging(window: WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|e| format!("Failed to start dragging: {}", e))
+}
+

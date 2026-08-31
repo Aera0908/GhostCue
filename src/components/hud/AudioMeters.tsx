@@ -7,6 +7,7 @@ interface AudioMetersProps {
   micActive: boolean;
   loopbackActive: boolean;
   sensitivity: number;
+  bgOpacity?: number;
 }
 
 export const AudioMeters: React.FC<AudioMetersProps> = ({
@@ -14,81 +15,68 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
   loopbackLevel,
   micActive,
   loopbackActive,
-  sensitivity,
+  bgOpacity = 0.94,
 }) => {
-  // Clamp levels between 0 and 1
-  const micPct = Math.min(100, Math.max(0, micLevel * 100));
-  const loopbackPct = Math.min(100, Math.max(0, loopbackLevel * 100));
-  const thresholdPct = Math.min(100, Math.max(0, sensitivity * 100));
+  const micPct = Math.min(100, Math.max(micActive ? 6 : 0, Math.round(micLevel * 100)));
+  const loopbackPct = Math.min(100, Math.max(loopbackActive ? 6 : 0, Math.round(loopbackLevel * 100)));
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-950/60 border-b border-white/5 text-[11px]">
-      {/* Interviewer System Loopback Meter */}
+    <div
+      style={{ backgroundColor: `rgba(14, 14, 14, ${bgOpacity})` }}
+      className="flex items-center gap-4 px-3 py-2 border-b border-[#202020] text-xs select-none font-sans"
+    >
+      {/* Interviewer Loopback Meter */}
       <div className="flex-1 flex items-center gap-2">
-        <div className="flex items-center gap-1 text-sky-400 font-medium min-w-[75px]">
-          <Volume2 className="w-3.5 h-3.5" />
-          <span>Interviewer</span>
+        <div className="flex items-center gap-1.5 text-[#aaaaaa] font-medium min-w-[85px]">
+          <Volume2 className={`w-3.5 h-3.5 transition-colors ${loopbackActive ? "text-[#38bdf8] animate-pulse" : "text-[#555555]"}`} />
+          <span className={loopbackActive ? "text-[#38bdf8] font-bold" : "text-[#bbbbbb]"}>Interviewer</span>
         </div>
 
-        {/* Meter Bar Container */}
-        <div className="relative flex-1 h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-          {/* Threshold Marker */}
+        {/* Level Track */}
+        <div className="flex-1 h-2 bg-[#1a1a1a] border border-[#262626] overflow-hidden">
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-yellow-500/80 z-10"
-            style={{ left: `${thresholdPct}%` }}
-            title={`VAD Threshold: ${Math.round(thresholdPct)}%`}
-          />
-          {/* Active Level Bar */}
-          <div
-            className="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-75 ease-out rounded-full"
+            className={`h-full transition-all duration-75 ease-out ${
+              loopbackActive ? "bg-[#38bdf8]" : "bg-[#1e4a66]"
+            }`}
             style={{ width: `${loopbackPct}%` }}
           />
         </div>
 
-        {/* VAD Speech Bulb */}
+        {/* Voice Active Dot */}
         <span
-          className={`w-2 h-2 rounded-full transition-all duration-150 ${
-            loopbackActive
-              ? "bg-cyan-400 shadow-[0_0_8px_#38bdf8] scale-110"
-              : "bg-slate-700"
+          className={`w-2 h-2 rounded-full transition-colors ${
+            loopbackActive ? "bg-[#38bdf8] shadow-[0_0_6px_#38bdf8]" : "bg-[#282828]"
           }`}
-          title={loopbackActive ? "Interviewer Speaking" : "Interviewer Silent"}
+          title={loopbackActive ? "Interviewer speaking" : "Interviewer silent"}
         />
       </div>
 
-      {/* Vertical divider */}
-      <div className="h-4 w-px bg-slate-800" />
+      {/* Vertical Divider */}
+      <div className="h-3.5 w-[1px] bg-[#2a2a2a]" />
 
-      {/* Candidate Microphone Meter */}
+      {/* Candidate Mic Meter */}
       <div className="flex-1 flex items-center gap-2">
-        <div className="flex items-center gap-1 text-emerald-400 font-medium min-w-[75px]">
-          <Mic className="w-3.5 h-3.5" />
-          <span>Candidate</span>
+        <div className="flex items-center gap-1.5 text-[#aaaaaa] font-medium min-w-[50px]">
+          <Mic className={`w-3.5 h-3.5 transition-colors ${micActive ? "text-[#4ade80] animate-pulse" : "text-[#555555]"}`} />
+          <span className={micActive ? "text-[#4ade80] font-bold" : "text-[#bbbbbb]"}>You</span>
         </div>
 
-        {/* Meter Bar Container */}
-        <div className="relative flex-1 h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-          {/* Threshold Marker */}
+        {/* Level Track */}
+        <div className="flex-1 h-2 bg-[#1a1a1a] border border-[#262626] overflow-hidden">
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-yellow-500/80 z-10"
-            style={{ left: `${thresholdPct}%` }}
-            title={`VAD Threshold: ${Math.round(thresholdPct)}%`}
-          />
-          {/* Active Level Bar */}
-          <div
-            className="h-full bg-gradient-to-r from-emerald-500 to-teal-300 transition-all duration-75 ease-out rounded-full"
+            className={`h-full transition-all duration-75 ease-out ${
+              micActive ? "bg-[#4ade80]" : "bg-[#1c4d28]"
+            }`}
             style={{ width: `${micPct}%` }}
           />
         </div>
 
-        {/* VAD Speech Bulb */}
+        {/* Voice Active Dot */}
         <span
-          className={`w-2 h-2 rounded-full transition-all duration-150 ${
-            micActive
-              ? "bg-emerald-400 shadow-[0_0_8px_#10b981] scale-110"
-              : "bg-slate-700"
+          className={`w-2 h-2 rounded-full transition-colors ${
+            micActive ? "bg-[#4ade80] shadow-[0_0_6px_#4ade80]" : "bg-[#282828]"
           }`}
-          title={micActive ? "Candidate Speaking" : "Candidate Silent"}
+          title={micActive ? "You speaking" : "You silent"}
         />
       </div>
     </div>

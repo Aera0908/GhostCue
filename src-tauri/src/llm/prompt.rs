@@ -14,7 +14,7 @@ impl PromptBuilder {
     /// Format recent transcript history into dialogue turns
     pub fn format_conversation_history(history: &[TranscriptSegment], max_turns: usize) -> String {
         if history.is_empty() {
-            return "No prior conversation recorded.".to_string();
+            return "No previous conversation audio recorded yet.".to_string();
         }
 
         let start_idx = history.len().saturating_sub(max_turns);
@@ -32,27 +32,72 @@ impl PromptBuilder {
             return config.system_prompt_override.clone();
         }
 
+        let role = if config.target_role.trim().is_empty() {
+            "Professional Candidate".to_string()
+        } else {
+            config.target_role.clone()
+        };
+
+        let company = if config.company_name.trim().is_empty() {
+            "Target Company".to_string()
+        } else {
+            config.company_name.clone()
+        };
+
+        let interview_title = if config.interview_title.trim().is_empty() {
+            format!("Interview for {}", role)
+        } else {
+            config.interview_title.clone()
+        };
+
+        let job_desc = if config.job_description.trim().is_empty() {
+            "General technical and behavioral interview requirements.".to_string()
+        } else {
+            config.job_description.clone()
+        };
+
+        let resume = if config.candidate_resume.trim().is_empty() {
+            "Experienced candidate with strong software engineering, architecture, and problem-solving skills.".to_string()
+        } else {
+            config.candidate_resume.clone()
+        };
+
         format!(
-r#"You are GhostCue, a real-time stealth AI interview copilot for a candidate.
-Your goal is to provide concise, ultra-high-value responses that the candidate can read and speak naturally during an interview.
+r#"You are GhostCue, a real-time stealth AI interview copilot assisting a candidate during a live interview.
+Your goal is to supply direct, authentic, and highly persuasive answers that anchor deeply in the candidate's actual resume, background, and the specific company & role context.
 
-=== TARGET ROLE ===
-{role}
+=== CANDIDATE PROFILE & INTERVIEW TARGET ===
+- Target Role: {role}
+- Target Company: {company}
+- Interview Stage / Title: {interview_title}
 
-=== JOB DESCRIPTION ===
+- Job Description & Requirements:
 {job_desc}
 
-=== CANDIDATE BACKGROUND & RESUME ===
+- Candidate's Resume & Background:
 {resume}
 
-=== CORE RESPONSE RULES ===
-1. Be direct, clear, and extremely punchy. Avoid all introductory filler ("Certainly!", "Here's the answer").
-2. When coding is requested, provide both the high-level explanation/complexity AND the code in markdown format with syntax highlighting (e.g. ```python, ```typescript, ```rust).
-3. Include specific metrics, trade-offs, time/space complexities (e.g. O(N log N) time, O(1) space), and edge cases.
-4. Keep the explanation conversational so the candidate can read it out loud comfortably."#,
-            role = config.target_role,
-            job_desc = config.job_description,
-            resume = config.candidate_resume
+=== CORE ANSWERING INSTRUCTIONS ===
+1. SPEAK IN THE FIRST PERSON ("I", "my team", "we"):
+   - Formulate every answer as if the candidate is speaking it directly right now.
+   - Weave in concrete details, metrics, technologies, and past projects from the candidate's background/resume.
+   - Align your architectural trade-offs, design principles, and culture fit with the specific company ({company}) and role ({role}).
+
+2. ADAPT TO QUESTION TYPE:
+   - Behavioral / Situational ("Tell me about a time...", "Describe a challenge"): Use STAR method (Situation, Task, Action, Result) drawing directly from the candidate's resume experiences.
+   - Technical / Conceptual: Give a punchy 1-sentence definition, followed by 2-3 key technical points, best practices, and edge cases.
+   - System Design: Provide high-level architecture, component breakdown, data flow, scaling bottlenecks, and reliability trade-offs relevant to the job requirements.
+   - Coding: Provide quick algorithmic approach + clean code block (```language) + O(Time/Space).
+
+3. SCANNABLE & CONVERSATIONAL:
+   - Start immediately with the answer. Never include conversational filler ("Certainly!", "Sure thing!", "Here is an answer").
+   - Use bold keywords and clean bullet points for rapid reading during live speech.
+   - Keep answers crisp, punchy, and confident."#,
+            role = role,
+            company = company,
+            interview_title = interview_title,
+            job_desc = job_desc,
+            resume = resume
         )
     }
 
@@ -69,21 +114,21 @@ Your goal is to provide concise, ultra-high-value responses that the candidate c
             ActionType::GeneralHint => {
                 if let Some(query) = custom_query {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Candidate/Interviewer Question:
+Candidate / Interviewer Prompt:
 "{}"
 
-Provide a direct, high-impact answer and 2-3 key talking points tailored to the candidate's background."#,
+Task: Provide the direct, most compelling response and 2-3 key talking points."#,
                         history_str, query
                     )
                 } else {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Analyze the latest interviewer question or statement and provide the best direct answer and key talking points."#,
+Task: Analyze the most recent question or statement from the interviewer. Provide a direct, articulate response and key bullet points."#,
                         history_str
                     )
                 }
@@ -91,29 +136,27 @@ Analyze the latest interviewer question or statement and provide the best direct
             ActionType::CodeSolution => {
                 if let Some(query) = custom_query {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Coding Problem / Request:
+Coding Problem / Query:
 "{}"
 
-Focus: TECHNICAL CODING SOLUTION & STRATEGY
-Provide:
-1. Short conceptual explanation, algorithmic strategy, time complexity O(...), and space complexity O(...).
-2. Clean, idiomatic, production-ready code in a formatted markdown code block (e.g. ```python, ```typescript, or ```rust).
-3. 2 key edge cases to verbally highlight to the interviewer."#,
+Task: Provide:
+1. Quick algorithmic intuition & Time/Space complexity.
+2. Clean, optimal code block (```language).
+3. 2 key edge cases to mention verbally."#,
                         history_str, query
                     )
                 } else {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Focus: TECHNICAL CODING SOLUTION & STRATEGY
-Analyze the interviewer's technical question. Provide:
-1. Short conceptual explanation, algorithmic strategy, time complexity O(...), and space complexity O(...).
-2. Clean, idiomatic, production-ready code in a formatted markdown code block (e.g. ```python, ```typescript, or ```rust).
-3. 2 key edge cases to verbally highlight to the interviewer."#,
+Task: Extract the coding problem asked by the interviewer. Provide:
+1. Quick algorithmic intuition & Time/Space complexity.
+2. Clean, optimal code block (```language).
+3. 2 key edge cases to mention verbally."#,
                         history_str
                     )
                 }
@@ -121,23 +164,21 @@ Analyze the interviewer's technical question. Provide:
             ActionType::Clarification => {
                 if let Some(query) = custom_query {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Topic / Question:
+Topic / Prompt:
 "{}"
 
-Focus: STRATEGIC CLARIFYING QUESTIONS
-Generate 2-3 smart, senior-level questions the candidate should ask the interviewer to clarify requirements, scope, scale, or constraints before solving."#,
+Task: Formulate 2-3 strategic, senior clarifying questions the candidate should ask the interviewer to scope requirements, scale, or constraints."#,
                         history_str, query
                     )
                 } else {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Focus: STRATEGIC CLARIFYING QUESTIONS
-Generate 2-3 smart, senior-level questions the candidate should ask the interviewer to clarify requirements, scope, scale, or constraints before solving."#,
+Task: Formulate 2-3 strategic clarifying questions the candidate should ask the interviewer regarding their latest statement."#,
                         history_str
                     )
                 }
@@ -145,23 +186,21 @@ Generate 2-3 smart, senior-level questions the candidate should ask the intervie
             ActionType::Elaborate => {
                 if let Some(query) = custom_query {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Topic / Deep Dive:
+Topic / Query:
 "{}"
 
-Focus: ARCHITECTURAL DEEP DIVE & TRADE-OFFS
-Provide a deep architectural breakdown: component topology, scalability bottlenecks, failure modes, data consistency trade-offs, and observability."#,
+Task: Provide an in-depth architectural breakdown, deep-dive analysis, failure modes, trade-offs, and scaling bottlenecks."#,
                         history_str, query
                     )
                 } else {
                     format!(
-r#"Recent Interview Dialogue:
+r#"Recent Transcript History:
 {}
 
-Focus: ARCHITECTURAL DEEP DIVE & TRADE-OFFS
-Provide a deep architectural breakdown: component topology, scalability bottlenecks, failure modes, data consistency trade-offs, and observability."#,
+Task: Provide a deep-dive analysis and architectural trade-offs on the interviewer's latest topic."#,
                         history_str
                     )
                 }

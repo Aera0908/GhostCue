@@ -17,6 +17,7 @@ interface WhisperModelInfo {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const [whisperModels, setWhisperModels] = useState<WhisperModelInfo[]>([]);
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,13 +28,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
   const handleDownloadWhisper = async (modelName: string) => {
     setDownloadingModel(modelName);
+    setDownloadProgress(0);
     setDownloadSuccess(null);
 
+    // If using Tauri, model-download-progress events are emitted from backend
     try {
       const path = await TauriApi.downloadWhisperModel(modelName);
       onChange("whisper_model_path", path);
       onChange("whisper_model_size", modelName);
-      setDownloadSuccess(`Model ${modelName} ready!`);
+      onChange("stt_provider", "local_whisper");
+      setDownloadSuccess(`Model ${modelName} installed & active!`);
     } catch (err: any) {
       alert(`Failed to download model: ${err}`);
     } finally {
@@ -42,71 +46,100 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   };
 
   return (
-    <div className="space-y-5 text-xs">
-      {/* --- STT Provider Section --- */}
-      <div>
-        <h4 className="flex items-center gap-1.5 font-semibold text-slate-200 mb-2">
-          <Cpu className="w-3.5 h-3.5 text-sky-400" />
+    <div className="space-y-4 text-sm font-sans">
+      {/* --- STT Engine Section --- */}
+      <div className="p-3 bg-[#121212] border border-[#1f1f1f] space-y-2.5 font-mono text-xs">
+        <h4 className="flex items-center gap-2 font-bold text-white uppercase">
+          <Cpu className="w-3.5 h-3.5 text-[#38bdf8]" />
           <span>Speech-to-Text (STT) Engine</span>
         </h4>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        {/* Engine Switcher (3 options) */}
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
-            onClick={() => onChange("stt_provider", "local_whisper")}
-            className={`flex flex-col items-start p-2.5 rounded-lg border text-left transition-all ${
-              config.stt_provider === "local_whisper"
-                ? "bg-sky-950/60 border-sky-500/60 text-sky-200 shadow-sm"
-                : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+            onClick={() => onChange("stt_provider", "cloud_whisper")}
+            className={`p-2 text-left border transition-colors ${
+              config.stt_provider === "cloud_whisper" || config.stt_provider === "openai_whisper" || (!config.stt_provider && config.openai_api_key)
+                ? "bg-[#1c1c1c] border-white text-white font-bold"
+                : "bg-[#080808] border-[#222222] text-[#777777] hover:text-[#cccccc]"
             }`}
           >
-            <span className="font-semibold text-xs text-slate-200">Local Whisper (GGML)</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">100% Offline & Private (whisper.cpp)</span>
+            <span className="block font-bold text-[#4ade80]">Cloud Whisper (AI)</span>
+            <span className="text-[10px] text-[#888888]">Auto OpenAI key • 0s setup</span>
           </button>
 
           <button
             type="button"
             onClick={() => onChange("stt_provider", "deepgram")}
-            className={`flex flex-col items-start p-2.5 rounded-lg border text-left transition-all ${
+            className={`p-2 text-left border transition-colors ${
               config.stt_provider === "deepgram"
-                ? "bg-sky-950/60 border-sky-500/60 text-sky-200 shadow-sm"
-                : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                ? "bg-[#1c1c1c] border-white text-white font-bold"
+                : "bg-[#080808] border-[#222222] text-[#777777] hover:text-[#cccccc]"
             }`}
           >
-            <span className="font-semibold text-xs text-slate-200">Deepgram Nova-2</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">Zero CPU Load & Real-Time Cloud</span>
+            <span className="block font-bold text-white">Deepgram Nova-2</span>
+            <span className="text-[10px] text-[#888888]">Ultra-fast streaming</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onChange("stt_provider", "local_whisper")}
+            className={`p-2 text-left border transition-colors ${
+              config.stt_provider === "local_whisper"
+                ? "bg-[#1c1c1c] border-white text-white font-bold"
+                : "bg-[#080808] border-[#222222] text-[#777777] hover:text-[#cccccc]"
+            }`}
+          >
+            <span className="block font-bold text-white">Local GGML Model</span>
+            <span className="text-[10px] text-[#888888]">100% Offline download</span>
           </button>
         </div>
 
+        {/* Cloud Whisper Status Banner */}
+        {(config.stt_provider === "cloud_whisper" || config.stt_provider === "openai_whisper" || (!config.stt_provider && config.openai_api_key)) && (
+          <div className="p-2.5 bg-[#0a180a] border border-[#1b381b] space-y-1 text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-[#4ade80]">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>OpenAI Cloud Whisper is Active</span>
+            </div>
+            <p className="text-[#88cc88] text-[11px] leading-relaxed">
+              Uses your active OpenAI API key from below or <code>.env</code>. No model download needed; transcribes instantly with zero CPU load.
+            </p>
+          </div>
+        )}
+
         {/* Local Whisper Options */}
         {config.stt_provider === "local_whisper" && (
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-3">
-            <div>
-              <label className="block text-slate-300 font-medium mb-1">Whisper GGML Model Selection</label>
-              <div className="space-y-1.5">
-                {whisperModels.map((m) => {
-                  const isSelected = config.whisper_model_size === m.name;
-                  const isDownloading = downloadingModel === m.name;
+          <div className="p-2.5 bg-[#080808] border border-[#1c1c1c] space-y-2">
+            <label className="block text-[#cccccc] font-bold text-xs uppercase">
+              Whisper GGML Model Selection
+            </label>
+            <div className="space-y-1.5">
+              {whisperModels.map((m) => {
+                const isSelected = config.whisper_model_size === m.name;
+                const isDownloading = downloadingModel === m.name;
 
-                  return (
-                    <div
-                      key={m.name}
-                      className={`flex items-center justify-between p-2 rounded border text-[11px] ${
-                        isSelected
-                          ? "bg-sky-950/40 border-sky-500/40 text-slate-200"
-                          : "bg-slate-950 border-slate-800/80 text-slate-400"
-                      }`}
-                    >
+                return (
+                  <div
+                    key={m.name}
+                    className={`flex flex-col p-2 border transition-colors ${
+                      isSelected
+                        ? "bg-[#161616] border-[#333333] text-white"
+                        : "bg-[#0c0c0c] border-[#181818] text-[#777777]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-sky-400 uppercase">{m.name}</span>
-                        <span className="text-slate-500">({m.size})</span>
+                        <span className="font-bold text-white uppercase text-xs">{m.name}</span>
+                        <span className="text-[#555555] text-[11px]">({m.size})</span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         {isSelected && !isDownloading && (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+                          <span className="flex items-center gap-1 text-[11px] text-[#4ade80] font-bold">
                             <CheckCircle className="w-3 h-3" />
-                            <span>Active</span>
+                            <span>ACTIVE</span>
                           </span>
                         )}
 
@@ -114,29 +147,43 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                           type="button"
                           onClick={() => handleDownloadWhisper(m.name)}
                           disabled={isDownloading}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-50 text-[10px]"
+                          className="flex items-center gap-1 px-2.5 py-1 bg-[#222222] hover:bg-[#333333] text-white disabled:opacity-40 text-xs transition-colors"
                         >
-                          <Download className="w-2.5 h-2.5" />
-                          <span>{isDownloading ? "Downloading..." : "Select / Get"}</span>
+                          <Download className="w-3 h-3" />
+                          <span>{isDownloading ? "DOWNLOADING..." : "SELECT / GET"}</span>
                         </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-              {downloadSuccess && (
-                <p className="text-[11px] text-emerald-400 mt-2 font-medium">{downloadSuccess}</p>
-              )}
+                    {isDownloading && (
+                      <div className="mt-2 space-y-1">
+                        <div className="w-full h-1.5 bg-[#222222] overflow-hidden">
+                          <div
+                            className="h-full bg-[#38bdf8] transition-all duration-300"
+                            style={{ width: `${Math.max(5, downloadProgress)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-[#888888]">
+                          Downloading model weights from HuggingFace...
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+
+            {downloadSuccess && (
+              <p className="text-xs text-[#4ade80] mt-1 font-bold">{downloadSuccess}</p>
+            )}
           </div>
         )}
 
         {/* Deepgram Options */}
         {config.stt_provider === "deepgram" && (
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-2">
-            <label className="flex items-center gap-1.5 font-medium text-slate-200">
-              <Key className="w-3.5 h-3.5 text-yellow-400" />
+          <div className="p-2.5 bg-[#080808] border border-[#1c1c1c] space-y-1.5">
+            <label className="flex items-center gap-2 font-bold text-white uppercase">
+              <Key className="w-3.5 h-3.5 text-[#facc15]" />
               <span>Deepgram API Key</span>
             </label>
             <input
@@ -144,30 +191,30 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               value={config.deepgram_api_key}
               onChange={(e) => onChange("deepgram_api_key", e.target.value)}
               placeholder="dg_..."
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+              className="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#222222] text-white text-xs focus:outline-none focus:border-[#444444]"
             />
           </div>
         )}
       </div>
 
       {/* --- LLM Provider Section --- */}
-      <div className="pt-2 border-t border-slate-800">
-        <h4 className="flex items-center gap-1.5 font-semibold text-slate-200 mb-2">
-          <Cloud className="w-3.5 h-3.5 text-purple-400" />
-          <span>LLM Provider & Generation Engine</span>
+      <div className="p-3 bg-[#121212] border border-[#1f1f1f] space-y-2.5 font-mono text-xs">
+        <h4 className="flex items-center gap-2 font-bold text-white uppercase">
+          <Cloud className="w-3.5 h-3.5 text-[#c084fc]" />
+          <span>LLM Provider & Engine</span>
         </h4>
 
-        {/* LLM Provider Tabs */}
-        <div className="grid grid-cols-4 gap-1.5 mb-3">
+        {/* Provider Switcher */}
+        <div className="grid grid-cols-4 gap-1.5">
           {(["ollama", "openai", "anthropic", "groq"] as const).map((prov) => (
             <button
               key={prov}
               type="button"
               onClick={() => onChange("llm_provider", prov)}
-              className={`py-1.5 px-2 rounded-md border text-center font-medium text-xs capitalize transition-all ${
+              className={`py-1.5 px-2 border text-center font-bold text-xs uppercase transition-colors ${
                 config.llm_provider === prov
-                  ? "bg-purple-950/60 border-purple-500/60 text-purple-200 shadow-sm"
-                  : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                  ? "bg-[#1c1c1c] border-white text-white"
+                  : "bg-[#080808] border-[#222222] text-[#777777] hover:text-[#cccccc]"
               }`}
             >
               {prov}
@@ -177,10 +224,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
         {/* Ollama Local Settings */}
         {config.llm_provider === "ollama" && (
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-3">
+          <div className="p-2.5 bg-[#080808] border border-[#1c1c1c] space-y-2">
             <div>
-              <label className="flex items-center gap-1 font-medium text-slate-300 mb-1">
-                <Server className="w-3 h-3 text-sky-400" />
+              <label className="flex items-center gap-2 font-bold text-white mb-1 uppercase">
+                <Server className="w-3 h-3 text-[#38bdf8]" />
                 <span>Ollama Endpoint URL</span>
               </label>
               <input
@@ -188,30 +235,37 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 value={config.ollama_endpoint}
                 onChange={(e) => onChange("ollama_endpoint", e.target.value)}
                 placeholder="http://localhost:11434"
-                className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                className="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#222222] text-white text-xs focus:outline-none focus:border-[#444444]"
               />
             </div>
             <div>
-              <label className="block font-medium text-slate-300 mb-1">Ollama Model Name</label>
+              <label className="block font-bold text-white mb-1 uppercase">
+                Ollama Model Name
+              </label>
               <input
                 type="text"
                 value={config.ollama_model}
                 onChange={(e) => onChange("ollama_model", e.target.value)}
                 placeholder="llama3.2, mistral-nemo, deepseek-r1:8b"
-                className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                className="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#222222] text-white text-xs focus:outline-none focus:border-[#444444]"
               />
             </div>
           </div>
         )}
 
-        {/* OpenAI / Groq / Anthropic Settings */}
+        {/* Cloud LLM Settings */}
         {config.llm_provider !== "ollama" && (
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-3">
+          <div className="p-2.5 bg-[#080808] border border-[#1c1c1c] space-y-2">
             <div>
-              <label className="flex items-center gap-1 font-medium text-slate-300 mb-1">
-                <Key className="w-3 h-3 text-yellow-400" />
+              <label className="flex items-center gap-2 font-bold text-white mb-1 uppercase">
+                <Key className="w-3.5 h-3.5 text-[#facc15]" />
                 <span>
-                  {config.llm_provider === "openai" ? "OpenAI" : config.llm_provider === "anthropic" ? "Anthropic" : "Groq"} API Key
+                  {config.llm_provider === "openai"
+                    ? "OpenAI"
+                    : config.llm_provider === "anthropic"
+                    ? "Anthropic"
+                    : "Groq"}{" "}
+                  API Key
                 </span>
               </label>
               <input
@@ -230,13 +284,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     onChange("anthropic_api_key", e.target.value);
                   }
                 }}
-                placeholder="sk-..."
-                className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                placeholder="sk-... or gsk_... (or leave in .env)"
+                className="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#222222] text-white text-xs focus:outline-none focus:border-[#444444]"
               />
             </div>
 
             <div>
-              <label className="block font-medium text-slate-300 mb-1">Model Name</label>
+              <label className="block font-bold text-white mb-1 uppercase">
+                Model Name
+              </label>
               <input
                 type="text"
                 value={
@@ -254,7 +310,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   }
                 }}
                 placeholder="gpt-4o-mini, claude-3-5-sonnet-20241022, llama-3.3-70b-versatile"
-                className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                className="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#222222] text-white text-xs focus:outline-none focus:border-[#444444]"
               />
             </div>
           </div>

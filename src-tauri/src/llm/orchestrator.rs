@@ -61,19 +61,19 @@ impl LlmOrchestrator {
             config.max_context_turns,
         );
 
-        let _ = app_handle.emit(
-            "llm-start",
-            serde_json::json!({
-                "action": action_name,
-                "provider": config.llm_provider,
-                "model": match config.llm_provider.as_str() {
-                    "ollama" => config.ollama_model.clone(),
-                    "openai" => config.openai_model.clone(),
-                    "anthropic" => config.anthropic_model.clone(),
-                    _ => config.custom_model.clone(),
-                }
-            }),
-        );
+        let payload_start = serde_json::json!({
+            "action": action_name,
+            "provider": config.llm_provider,
+            "model": match config.llm_provider.as_str() {
+                "ollama" => config.ollama_model.clone(),
+                "openai" => config.openai_model.clone(),
+                "anthropic" => config.anthropic_model.clone(),
+                _ => config.custom_model.clone(),
+            }
+        });
+
+        let _ = app_handle.emit_to("main", "llm-start", payload_start.clone());
+        let _ = app_handle.emit("llm-start", payload_start);
 
         let result = match config.llm_provider.as_str() {
             "ollama" => {
@@ -85,7 +85,6 @@ impl LlmOrchestrator {
                 client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
             }
             "anthropic" => {
-                // OpenAI-compatible proxy or direct Anthropic endpoint
                 let client = OpenAiClient::new(
                     if config.custom_endpoint.is_empty() { "https://api.anthropic.com/v1".to_string() } else { config.custom_endpoint },
                     config.anthropic_api_key,
@@ -102,7 +101,6 @@ impl LlmOrchestrator {
                 client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
             }
             _ => {
-                // Custom OpenAI-compatible endpoint
                 let client = OpenAiClient::new(config.custom_endpoint, config.custom_api_key, config.custom_model);
                 client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
             }
@@ -110,23 +108,21 @@ impl LlmOrchestrator {
 
         match result {
             Ok(full_text) => {
-                let _ = app_handle.emit(
-                    "llm-complete",
-                    serde_json::json!({
-                        "text": full_text,
-                        "action": action_name,
-                    }),
-                );
+                let payload_complete = serde_json::json!({
+                    "text": full_text.clone(),
+                    "action": action_name,
+                });
+                let _ = app_handle.emit_to("main", "llm-complete", payload_complete.clone());
+                let _ = app_handle.emit("llm-complete", payload_complete);
                 Ok(full_text)
             }
             Err(err) => {
-                let _ = app_handle.emit(
-                    "llm-error",
-                    serde_json::json!({
-                        "error": err.clone(),
-                        "action": action_name,
-                    }),
-                );
+                let payload_err = serde_json::json!({
+                    "error": err.clone(),
+                    "action": action_name,
+                });
+                let _ = app_handle.emit_to("main", "llm-error", payload_err.clone());
+                let _ = app_handle.emit("llm-error", payload_err);
                 Err(err)
             }
         }

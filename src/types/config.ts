@@ -17,7 +17,7 @@ export interface AppConfig {
   vad_silence_cutoff_ms: number;
 
   // STT Engine
-  stt_provider: "local_whisper" | "deepgram" | "mock";
+  stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "mock" | string;
   whisper_model_path: string;
   whisper_model_size: string;
   deepgram_api_key: string;
@@ -37,6 +37,8 @@ export interface AppConfig {
 
   // Interview Context & Prompts
   target_role: string;
+  company_name?: string;
+  interview_title?: string;
   job_description: string;
   candidate_resume: string;
   system_prompt_override: string;

@@ -47,3 +47,22 @@ pub async fn get_audio_capture_status(
     let capture_mgr = state.inner().audio_capture.lock();
     Ok(capture_mgr.is_running())
 }
+
+#[tauri::command]
+pub fn get_audio_levels() -> serde_json::Value {
+    let mic_bits = capture::CURRENT_MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed);
+    let mic_active = capture::CURRENT_MIC_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+    let loopback_bits = capture::CURRENT_LOOPBACK_LEVEL.load(std::sync::atomic::Ordering::Relaxed);
+    let loopback_active = capture::CURRENT_LOOPBACK_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+
+    let mic_level = f32::from_bits(mic_bits);
+    let loopback_level = f32::from_bits(loopback_bits);
+
+    serde_json::json!({
+        "mic_level": mic_level,
+        "mic_active": mic_active,
+        "loopback_level": loopback_level,
+        "loopback_active": loopback_active,
+    })
+}
+

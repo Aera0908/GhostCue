@@ -1,17 +1,21 @@
 /// Convert multi-channel audio to mono by averaging channels
 pub fn convert_to_mono(interleaved_samples: &[f32], channels: u16) -> Vec<f32> {
-    if channels == 1 {
+    if channels <= 1 {
         return interleaved_samples.to_vec();
     }
 
     let ch = channels as usize;
+    if ch == 0 {
+        return Vec::new();
+    }
     let frame_count = interleaved_samples.len() / ch;
     let mut mono = Vec::with_capacity(frame_count);
 
     for i in 0..frame_count {
         let mut sum = 0.0f32;
+        let base = i * ch;
         for c in 0..ch {
-            sum += interleaved_samples[i * ch + c];
+            sum += interleaved_samples[base + c];
         }
         mono.push(sum / (channels as f32));
     }
@@ -21,7 +25,7 @@ pub fn convert_to_mono(interleaved_samples: &[f32], channels: u16) -> Vec<f32> {
 
 /// Linear resampler from source_rate to target_rate (typically 16,000 Hz)
 pub fn resample_linear(input: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
-    if source_rate == target_rate || input.is_empty() {
+    if source_rate == target_rate || input.is_empty() || source_rate == 0 || target_rate == 0 {
         return input.to_vec();
     }
 
@@ -47,7 +51,7 @@ pub fn resample_linear(input: &[f32], source_rate: u32, target_rate: u32) -> Vec
     output
 }
 
-/// Process raw input chunk: convert to mono, resample to 16kHz, normalize
+/// Process raw input chunk: convert to mono, resample to 16kHz
 pub fn process_raw_audio(samples: &[f32], source_channels: u16, source_rate: u32) -> Vec<f32> {
     let mono = convert_to_mono(samples, source_channels);
     resample_linear(&mono, source_rate, 16000)
@@ -74,3 +78,5 @@ mod tests {
         assert_eq!(resampled.len(), 16000);
     }
 }
+
+

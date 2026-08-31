@@ -144,7 +144,9 @@ impl OpenAiClient {
                                 if let Some(delta) = choice.delta {
                                     if let Some(token) = delta.content {
                                         full_text.push_str(&token);
-                                        let _ = app_handle.emit("llm-token", serde_json::json!({ "token": token }));
+                                        let payload = serde_json::json!({ "token": token });
+                                        let _ = app_handle.emit_to("main", "llm-token", payload.clone());
+                                        let _ = app_handle.emit("llm-token", payload);
                                     }
                                 }
                             }

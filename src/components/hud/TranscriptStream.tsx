@@ -1,23 +1,49 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, Trash2, ArrowDown, Sparkles, User, Headphones } from "lucide-react";
+import { Copy, Trash2, ArrowDown, Sparkles, User, Headphones, Check, HelpCircle } from "lucide-react";
 import { TranscriptSegment } from "../../types/transcript";
 
 interface TranscriptStreamProps {
   transcripts: TranscriptSegment[];
   onClear: () => void;
   onAskAiAboutTurn: (text: string) => void;
+  bgOpacity?: number;
+  autoTriggerEnabled?: boolean;
+  onToggleAutoTrigger?: () => void;
 }
+
+export const isInterviewerQuestion = (text: string): boolean => {
+  const t = text.trim().toLowerCase();
+  return (
+    t.includes("?") ||
+    t.startsWith("how ") ||
+    t.startsWith("what ") ||
+    t.startsWith("why ") ||
+    t.startsWith("can you ") ||
+    t.startsWith("could you ") ||
+    t.startsWith("tell me ") ||
+    t.startsWith("explain ") ||
+    t.startsWith("describe ") ||
+    t.startsWith("walk me ") ||
+    t.startsWith("suppose ") ||
+    t.startsWith("give me ") ||
+    t.startsWith("write ") ||
+    t.startsWith("implement ") ||
+    t.startsWith("design ")
+  );
+};
 
 export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
   transcripts,
   onClear,
   onAskAiAboutTurn,
+  bgOpacity = 0.94,
+  autoTriggerEnabled = true,
+  onToggleAutoTrigger,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Auto-scroll when new transcripts arrive
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -38,16 +64,37 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950/40 rounded-lg border border-white/5 overflow-hidden">
-      {/* Header Bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/40 border-b border-white/5 text-[11px] text-slate-400">
-        <div className="flex items-center gap-1.5 font-medium text-slate-300">
-          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
-          <span>Live Conversation Stream</span>
-          <span className="text-[10px] text-slate-500 font-mono">({transcripts.length} turns)</span>
+    <div
+      style={{ backgroundColor: `rgba(16, 16, 16, ${bgOpacity})` }}
+      className="flex flex-col h-full select-none font-sans"
+    >
+      {/* Stream Header */}
+      <div
+        style={{ backgroundColor: `rgba(22, 22, 22, ${Math.min(1, bgOpacity + 0.05)})` }}
+        className="flex items-center justify-between px-3 py-1.5 text-xs text-[#888888] border-b border-[#252525]"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-white font-bold">Live Conversation</span>
+          <span className="text-[#888888] font-mono font-medium">({transcripts.length})</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {onToggleAutoTrigger && (
+            <button
+              type="button"
+              onClick={onToggleAutoTrigger}
+              className={`flex items-center gap-1 px-2 py-0.5 text-xs font-semibold transition-colors ${
+                autoTriggerEnabled
+                  ? "bg-[#163650] border border-[#38bdf8]/60 text-[#38bdf8] hover:bg-[#1a4466]"
+                  : "bg-[#242424] text-[#888888] hover:text-[#cccccc]"
+              }`}
+              title="Toggle automatic AI answer generation when questions are detected"
+            >
+              <Sparkles className={`w-3 h-3 ${autoTriggerEnabled ? "text-[#38bdf8]" : "text-[#777777]"}`} />
+              <span>Auto-Answer {autoTriggerEnabled ? "ON" : "OFF"}</span>
+            </button>
+          )}
+
           {!autoScroll && (
             <button
               type="button"
@@ -55,10 +102,10 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
                 setAutoScroll(true);
                 if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
               }}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-600/40 text-sky-300 text-[10px] hover:bg-sky-900"
+              className="flex items-center gap-1 px-2 py-0.5 bg-[#242424] text-white hover:bg-[#333333] transition-colors text-xs font-medium"
             >
-              <ArrowDown className="w-2.5 h-2.5" />
-              <span>Scroll Down</span>
+              <ArrowDown className="w-3 h-3" />
+              <span>Scroll to Bottom</span>
             </button>
           )}
 
@@ -66,7 +113,7 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
             <button
               type="button"
               onClick={onClear}
-              className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-rose-400 transition-colors"
+              className="flex items-center gap-1 px-2 py-0.5 bg-[#242424] text-[#aaaaaa] hover:text-[#f87171] hover:bg-[#331c1c] transition-colors text-xs font-medium"
               title="Clear transcript history"
             >
               <Trash2 className="w-3 h-3" />
@@ -76,84 +123,102 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
         </div>
       </div>
 
-      {/* Transcript Scroll Area */}
+      {/* Transcript List Scroll Area */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 p-2.5 space-y-2 overflow-y-auto font-sans text-xs scrollbar-thin scrollbar-thumb-slate-800"
+        className="flex-1 p-3 space-y-2.5 overflow-y-auto text-sm scrollbar-thin scrollbar-thumb-[#333333]"
       >
         {transcripts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 py-6 px-4">
-            <Headphones className="w-8 h-8 text-slate-600 mb-2 opacity-50 stroke-[1.5]" />
-            <p className="font-medium text-slate-400 text-xs">Waiting for conversation audio...</p>
-            <p className="text-[11px] text-slate-600 mt-1 max-w-[280px]">
-              Microphone and System Audio loopback will stream here in real time with speaker tagging.
+          <div className="flex flex-col items-center justify-center h-full text-center text-[#888888] py-6 px-4">
+            <p className="font-semibold text-white text-xs">Listening for conversation...</p>
+            <p className="text-xs text-[#777777] mt-1">
+              Interviewer questions and your answers will show up here automatically.
             </p>
           </div>
         ) : (
           transcripts.map((turn) => {
             const isInterviewer = turn.speaker === "Interviewer";
+            const speakerLabel = isInterviewer ? "Interviewer" : "You";
+            const isQuestion = isInterviewer && isInterviewerQuestion(turn.text);
+
             return (
               <div
                 key={turn.id}
-                className={`group relative flex flex-col p-2 rounded-lg border transition-all ${
-                  isInterviewer
-                    ? "bg-sky-950/20 border-sky-800/30 text-sky-100"
-                    : "bg-emerald-950/20 border-emerald-800/30 text-emerald-100"
+                style={{
+                  backgroundColor: isInterviewer
+                    ? isQuestion
+                      ? `rgba(18, 30, 44, ${Math.min(1, bgOpacity + 0.1)})`
+                      : `rgba(26, 26, 26, ${Math.min(1, bgOpacity + 0.08)})`
+                    : `rgba(20, 20, 20, ${Math.min(1, bgOpacity + 0.04)})`,
+                }}
+                className={`group relative flex flex-col p-3 border transition-colors ${
+                  isQuestion
+                    ? "border-[#38bdf8]/60 shadow-[0_0_12px_rgba(56,189,248,0.15)] text-[#ffffff]"
+                    : isInterviewer
+                    ? "border-[#2c2c2c] text-[#f0f0f0]"
+                    : "border-[#242424] text-[#f0f0f0]"
                 }`}
               >
-                {/* Speaker Tag & Timestamp */}
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-1.5">
+                {/* Speaker Header */}
+                <div className="flex items-center justify-between mb-1.5 text-xs">
+                  <div className="flex items-center gap-2">
                     {isInterviewer ? (
-                      <Headphones className="w-3 h-3 text-sky-400" />
+                      <Headphones className="w-3.5 h-3.5 text-[#38bdf8]" />
                     ) : (
-                      <User className="w-3 h-3 text-emerald-400" />
+                      <User className="w-3.5 h-3.5 text-[#4ade80]" />
                     )}
                     <span
-                      className={`font-semibold text-[11px] tracking-wide ${
-                        isInterviewer ? "text-sky-400" : "text-emerald-400"
+                      className={`font-bold ${
+                        isInterviewer ? "text-[#38bdf8]" : "text-[#4ade80]"
                       }`}
                     >
-                      {turn.speaker}
+                      {speakerLabel}
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">{turn.timestamp}</span>
+
+                    {/* Question Badge */}
+                    {isQuestion && (
+                      <span className="px-1.5 py-0.5 bg-[#163650] border border-[#38bdf8]/60 text-[#38bdf8] text-[10px] font-bold tracking-wider flex items-center gap-1 uppercase">
+                        <HelpCircle className="w-3 h-3" />
+                        <span>Question Detected</span>
+                      </span>
+                    )}
+
+                    <span className="text-[#888888] font-mono text-[11px]">{turn.timestamp}</span>
                   </div>
 
                   {/* Actions on hover */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
                     {isInterviewer && (
                       <button
                         type="button"
                         onClick={() => onAskAiAboutTurn(turn.text)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-900/60 hover:bg-sky-800 text-[10px] text-sky-200"
-                        title="Generate AI response for this question"
+                        className="flex items-center gap-1 px-2 py-0.5 bg-[#282828] hover:bg-[#383838] text-[#38bdf8] text-xs font-semibold transition-colors"
+                        title="Generate suggested answer for this question"
                       >
-                        <Sparkles className="w-2.5 h-2.5 text-sky-300" />
-                        <span>Cue</span>
+                        <Sparkles className="w-3 h-3" />
+                        <span>Answer This</span>
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => copyToClipboard(turn.id, turn.text)}
-                      className="p-1 rounded bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-slate-200"
+                      className="p-1 bg-[#282828] hover:bg-[#383838] text-[#cccccc] hover:text-white transition-colors"
                       title="Copy text"
                     >
-                      <Copy className="w-2.5 h-2.5" />
+                      {copiedId === turn.id ? (
+                        <Check className="w-3 h-3 text-[#4ade80]" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 {/* Speech Text */}
-                <p className="leading-relaxed text-slate-200 whitespace-pre-wrap font-normal select-text">
+                <p className="leading-relaxed text-sm sm:text-base text-white whitespace-pre-wrap font-normal select-text">
                   {turn.text}
                 </p>
-
-                {copiedId === turn.id && (
-                  <span className="absolute bottom-1 right-2 text-[9px] font-mono text-emerald-400 bg-emerald-950/90 px-1 py-0.5 rounded border border-emerald-500/40">
-                    Copied!
-                  </span>
-                )}
               </div>
             );
           })
@@ -162,3 +227,4 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
     </div>
   );
 };
+

@@ -48,6 +48,8 @@ pub struct AppConfig {
 
     // Interview Context & Prompts
     pub target_role: String,
+    pub company_name: String,
+    pub interview_title: String,
     pub job_description: String,
     pub candidate_resume: String,
     pub system_prompt_override: String,
@@ -72,7 +74,7 @@ impl Default for AppConfig {
             vad_speech_threshold_ms: 300,
             vad_silence_cutoff_ms: 800,
 
-            stt_provider: "local_whisper".to_string(),
+            stt_provider: "cloud_whisper".to_string(),
             whisper_model_path: "".to_string(),
             whisper_model_size: "base.en".to_string(),
             deepgram_api_key: "".to_string(),
@@ -90,6 +92,8 @@ impl Default for AppConfig {
             custom_model: "".to_string(),
 
             target_role: "Senior Software Engineer".to_string(),
+            company_name: "".to_string(),
+            interview_title: "".to_string(),
             job_description: "Full Stack / Distributed Systems Engineer. Tech: Rust, TypeScript, React, System Design, Algorithms.".to_string(),
             candidate_resume: "Experienced engineer with 6+ years in backend systems, high-concurrency microservices, TypeScript, and modern frontend frameworks.".to_string(),
             system_prompt_override: "".to_string(),
@@ -142,6 +146,9 @@ impl AppConfig {
                 config.openai_api_key = val.trim().to_string();
                 if config.llm_provider.is_empty() || config.llm_provider == "ollama" {
                     config.llm_provider = "openai".to_string();
+                }
+                if config.stt_provider.is_empty() || config.stt_provider == "local_whisper" {
+                    config.stt_provider = "cloud_whisper".to_string();
                 }
             }
         }
