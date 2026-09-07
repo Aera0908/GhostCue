@@ -48,7 +48,7 @@ impl DeepgramClient {
     }
 
     /// Transcribe 16kHz mono audio buffer via Deepgram Nova-2 API
-    pub async fn transcribe_buffer(&self, samples: &[f32]) -> Result<String, String> {
+    pub async fn transcribe_buffer(&self, samples: &[f32], language: &str) -> Result<String, String> {
         if self.api_key.trim().is_empty() {
             return Err("Deepgram API key is empty".to_string());
         }
@@ -58,7 +58,13 @@ impl DeepgramClient {
             return Ok(String::new());
         }
 
-        let url = "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&language=en";
+        let clean_lang = language.trim().to_lowercase();
+        let url = if clean_lang.is_empty() || clean_lang == "auto" {
+            "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&detect_language=true".to_string()
+        } else {
+            let lang_code = clean_lang.split('-').next().unwrap_or(&clean_lang);
+            format!("https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&language={}", lang_code)
+        };
 
         let mut headers = HeaderMap::new();
         headers.insert(

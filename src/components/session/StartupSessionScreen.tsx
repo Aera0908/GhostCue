@@ -1,16 +1,38 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, History, Trash2, ArrowRight, Play, Briefcase, FileText, UserCheck, Sparkles, Settings, Upload, FileCheck } from "lucide-react";
+import {
+  Plus,
+  History,
+  Trash2,
+  ArrowRight,
+  Play,
+  Briefcase,
+  FileText,
+  UserCheck,
+  Sparkles,
+  Settings,
+  Upload,
+  FileCheck,
+  X,
+  Minus,
+  FolderGit2,
+  Search,
+  Download,
+  FolderOpen,
+} from "lucide-react";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { InterviewSession } from "../../types/session";
 import { AppConfig } from "../../types/config";
 import { TauriApi } from "../../services/tauriApi";
 import { extractTextFromFile } from "../../utils/fileParser";
+import { exportSessionAsTxt } from "../../utils/exportTxt";
+import { useTranslation } from "../../i18n";
 
 interface StartupSessionScreenProps {
   sessions: InterviewSession[];
   activeSessionId: string | null;
   config: AppConfig;
   onSelectSession: (sessionId: string) => void;
-  onCreateSession: (session: Omit<InterviewSession, "id" | "createdAt" | "lastActive" | "transcripts">) => void;
+  onCreateSession: (session: Omit<InterviewSession, "id" | "createdAt" | "lastActive" | "transcripts" | "aiLogs">) => void;
   onDeleteSession: (sessionId: string) => void;
   onOpenSettings: () => void;
   onStartLiveHud: () => void;
@@ -53,18 +75,22 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
   onOpenSettings,
   onStartLiveHud,
 }) => {
+  const { t } = useTranslation();
   const [title, setTitle] = useState(() => localStorage.getItem("ghostcue_draft_title") || "New Interview");
   const [role, setRole] = useState(() => localStorage.getItem("ghostcue_draft_role") || config.target_role || "Software Engineer");
   const [company, setCompany] = useState(() => localStorage.getItem("ghostcue_draft_company") || "");
   const [jobDescription, setJobDescription] = useState(() => localStorage.getItem("ghostcue_draft_job_desc") || config.job_description || "");
   const [candidateResume, setCandidateResume] = useState(() => localStorage.getItem("ghostcue_resume_text") || config.candidate_resume || "");
+  const [projectDirectory, setProjectDirectory] = useState(() => localStorage.getItem("ghostcue_draft_project_dir") || config.project_directory || "");
+  const [projectContext, setProjectContext] = useState(() => localStorage.getItem("ghostcue_draft_project_ctx") || config.project_context || "");
+  const [isScanningDir, setIsScanningDir] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
 
-  // Resume Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(() => localStorage.getItem("ghostcue_resume_filename"));
   const [isParsingResume, setIsParsingResume] = useState(false);
 
-  // Sync state when config updates from disk
   useEffect(() => {
     if (config.target_role && !localStorage.getItem("ghostcue_draft_role")) {
       setRole(config.target_role);
@@ -74,6 +100,15 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
     }
     if (config.candidate_resume && !localStorage.getItem("ghostcue_resume_text")) {
       setCandidateResume(config.candidate_resume);
+    }
+    if (config.company_name && !localStorage.getItem("ghostcue_draft_company")) {
+      setCompany(config.company_name);
+    }
+    if (config.project_directory && !localStorage.getItem("ghostcue_draft_project_dir")) {
+      setProjectDirectory(config.project_directory);
+    }
+    if (config.project_context && !localStorage.getItem("ghostcue_draft_project_ctx")) {
+      setProjectContext(config.project_context);
     }
   }, [config]);
 
@@ -85,7 +120,6 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
   const handleRoleChange = (val: string) => {
     setRole(val);
     localStorage.setItem("ghostcue_draft_role", val);
-    TauriApi.saveConfig({ ...config, target_role: val });
   };
 
   const handleCompanyChange = (val: string) => {
@@ -96,13 +130,107 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
   const handleJobDescChange = (val: string) => {
     setJobDescription(val);
     localStorage.setItem("ghostcue_draft_job_desc", val);
-    TauriApi.saveConfig({ ...config, job_description: val });
   };
 
   const handleResumeTextChange = (val: string) => {
     setCandidateResume(val);
     localStorage.setItem("ghostcue_resume_text", val);
-    TauriApi.saveConfig({ ...config, candidate_resume: val });
+  };
+
+  const handleProjectDirectoryChange = (val: string) => {
+    setProjectDirectory(val);
+    localStorage.setItem("ghostcue_draft_project_dir", val);
+  };
+
+  const handleProjectContextChange = (val: string) => {
+    setProjectContext(val);
+    localStorage.setItem("ghostcue_draft_project_ctx", val);
+  };
+
+  const handleScanProjectDirectory = async (dirPath?: string) => {
+    const targetDir = dirPath || projectDirectory.trim();
+    if (!targetDir) {
+      alert("Please specify a project directory path first.");
+      return;
+    }
+
+    setIsScanningDir(true);
+    setScanStatus("Scanning codebase structure and markdown files...");
+
+    try {
+      const summary = await TauriApi.scanProjectDirectory(targetDir);
+      if (summary && summary.trim().length > 10) {
+        handleProjectContextChange(summary.trim());
+        setScanStatus(`Indexed ${summary.length.toLocaleString()} characters of codebase architecture.`);
+      } else {
+        setScanStatus("Scan returned empty. Ensure path exists.");
+      }
+    } catch (err: any) {
+      console.error("Project directory scan failed:", err);
+      setScanStatus(`Scan failed: ${err.message || err}`);
+    } finally {
+      setIsScanningDir(false);
+    }
+  };
+
+  const handleSelectFolderDialog = async () => {
+    try {
+      if (folderInputRef.current) {
+        folderInputRef.current.click();
+      }
+    } catch (err) {
+      console.error("Folder select error:", err);
+    }
+  };
+
+  const handleHtmlFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsScanningDir(true);
+    setScanStatus(`Processing ${files.length} project files...`);
+
+    try {
+      let folderPath = "Uploaded Folder";
+      const firstFile = files[0];
+      if ((firstFile as any).webkitRelativePath) {
+        const parts = (firstFile as any).webkitRelativePath.split("/");
+        if (parts.length > 1) {
+          folderPath = parts[0];
+        }
+      }
+      handleProjectDirectoryChange(folderPath);
+
+      let summary = `### Project Folder: ${folderPath}\n\n#### 1. Uploaded File Tree:\n\`\`\`\n`;
+      const fileNames = Array.from(files).map((f) => (f as any).webkitRelativePath || f.name);
+      summary += fileNames.slice(0, 45).join("\n");
+      if (fileNames.length > 45) summary += `\n... (${fileNames.length - 45} more files)`;
+      summary += "\n```\n\n#### 2. Key Manifests & Documentation:\n";
+
+      for (let i = 0; i < Math.min(files.length, 8); i++) {
+        const f = files[i];
+        const lower = f.name.toLowerCase();
+        if (
+          lower.endsWith(".md") ||
+          lower.endsWith(".json") ||
+          lower.endsWith(".toml") ||
+          lower.endsWith(".txt") ||
+          lower.endsWith(".yml") ||
+          lower.endsWith(".yaml")
+        ) {
+          const text = await f.text();
+          summary += `\n--- [${f.name}] ---\n\`\`\`\n${text.slice(0, 3000)}\n\`\`\`\n`;
+        }
+      }
+
+      handleProjectContextChange(summary);
+      setScanStatus(`Indexed ${summary.length.toLocaleString()} characters from ${files.length} files.`);
+    } catch (err) {
+      console.error("HTML folder upload failed:", err);
+    } finally {
+      setIsScanningDir(false);
+      if (folderInputRef.current) folderInputRef.current.value = "";
+    }
   };
 
   const handleApplyPreset = (preset: typeof PRESETS[0]) => {
@@ -146,6 +274,8 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
       company: company.trim() || undefined,
       jobDescription: jobDescription.trim(),
       candidateResume: candidateResume.trim(),
+      projectDirectory: projectDirectory.trim() || undefined,
+      projectContext: projectContext.trim() || undefined,
     });
     onStartLiveHud();
   };
@@ -161,73 +291,97 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0d0d0d] text-[#e0e0e0] font-sans select-none overflow-hidden">
-      {/* Top Header */}
+    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 font-sans select-none overflow-hidden">
+      {/* Header */}
       <header
         data-tauri-drag-region
         onMouseDown={handleStartDrag}
-        className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-b border-[#222222] cursor-move"
+        className="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800 cursor-move"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-white font-mono tracking-tight">
+        <div className="flex items-center gap-2.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]" />
+          <span className="text-sm font-bold text-slate-100 tracking-tight font-sans">
             GhostCue
           </span>
-          <span className="text-xs text-[#777777]">
-            • Interview Hub
+          <span className="text-xs text-slate-400 font-medium">
+            • {t.sessionScreen.title}
           </span>
         </div>
 
-        {/* Center Drag Dotted Square */}
+        {/* Center Drag Handle */}
         <div
           data-tauri-drag-region
           onMouseDown={() => TauriApi.startDragging()}
-          className="flex items-center justify-center p-1 text-[#666666] hover:text-[#bbbbbb] cursor-move select-none"
+          className="flex items-center justify-center px-4 py-1 text-slate-500 hover:text-slate-300 cursor-move select-none"
           title="Drag Window"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-            <circle cx="3" cy="3" r="1.2" />
-            <circle cx="8" cy="3" r="1.2" />
-            <circle cx="13" cy="3" r="1.2" />
-            <circle cx="3" cy="8" r="1.2" />
-            <circle cx="8" cy="8" r="1.2" />
-            <circle cx="13" cy="8" r="1.2" />
-            <circle cx="3" cy="13" r="1.2" />
-            <circle cx="8" cy="13" r="1.2" />
-            <circle cx="13" cy="13" r="1.2" />
-          </svg>
+          <div className="flex gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onOpenSettings}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#282828] text-xs text-[#cccccc] hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Settings</span>
+            <Settings className="w-3.5 h-3.5 text-slate-400" />
+            <span>{t.header.settings}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                getCurrentWebviewWindow().minimize();
+              } catch (_) {}
+            }}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+            title="Minimize"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await TauriApi.exitApp();
+              } catch {
+                try {
+                  getCurrentWebviewWindow().close();
+                } catch (_) {}
+              }
+            }}
+            className="p-1.5 bg-slate-800 hover:bg-rose-900 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-rose-400"
+            title={t.common.close}
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>
 
-      {/* Main Split Body */}
+      {/* Main Layout */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden">
-        {/* Left Column: Past Interviews History */}
-        <div className="md:col-span-4 flex flex-col bg-[#111111] border-r border-[#1f1f1f] overflow-hidden">
-          <div className="flex items-center justify-between px-3.5 py-2 bg-[#161616] border-b border-[#222222] text-xs">
-            <div className="flex items-center gap-1.5 font-bold text-white">
-              <History className="w-3.5 h-3.5 text-[#888888]" />
-              <span>Past Interviews</span>
+        {/* Left Column: Past Sessions */}
+        <div className="md:col-span-4 flex flex-col bg-slate-900/60 border-r border-slate-800 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 text-xs">
+            <div className="flex items-center gap-2 font-bold text-slate-100">
+              <History className="w-4 h-4 text-sky-400" />
+              <span>Past Sessions</span>
             </div>
-            <span className="text-[#666666] font-mono">({sessions.length})</span>
+            <span className="text-slate-400 font-mono font-medium">({sessions.length})</span>
           </div>
 
-          {/* Session List */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-2 scrollbar-thin scrollbar-thumb-[#282828]">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 scrollbar-thin">
             {sessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-center text-[#666666] text-xs px-4">
-                <p className="font-medium text-[#888888]">No previous sessions yet</p>
-                <p className="text-[11px] mt-1 text-[#555555] leading-relaxed">
-                  Start an interview on the right to begin live transcription and AI coaching.
+              <div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 text-xs px-4">
+                <p className="font-semibold text-slate-300">No previous sessions yet</p>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  {t.sessionScreen.subtitle}
                 </p>
               </div>
             ) : (
@@ -236,10 +390,10 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                 return (
                   <div
                     key={sess.id}
-                    className={`group flex flex-col p-3 border transition-colors cursor-pointer ${
+                    className={`group flex flex-col p-3 rounded-xl border transition-all cursor-pointer ${
                       isActive
-                        ? "bg-[#1c1c1c] border-[#383838] text-white"
-                        : "bg-[#141414] border-[#1f1f1f] text-[#888888] hover:border-[#333333] hover:text-[#cccccc]"
+                        ? "bg-slate-800 border-sky-500/60 text-slate-100 shadow-sm"
+                        : "bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-800/80 hover:text-white"
                     }`}
                     onClick={() => {
                       onSelectSession(sess.id);
@@ -247,28 +401,44 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                     }}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-xs text-white truncate max-w-[170px]">
+                      <span className="font-bold text-xs text-slate-100 truncate max-w-[170px]">
                         {sess.title}
                       </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteSession(sess.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-[#f87171] transition-opacity"
-                        title="Delete session"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportSessionAsTxt(sess, config);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-sky-400 text-slate-400 transition-opacity"
+                          title="Export interview session to .txt"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSession(sess.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-400 transition-opacity"
+                          title={t.common.delete}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-[#777777]">
-                      <span className="truncate max-w-[130px]">{sess.role}</span>
-                      <span>{sess.transcripts.length} exchanges</span>
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span className="truncate max-w-[130px] font-medium">{sess.role}</span>
+                      <span>
+                        {sess.transcripts.length} exchanges
+                        {sess.aiLogs && sess.aiLogs.length > 0 ? ` • ${sess.aiLogs.length} answers` : ""}
+                      </span>
                     </div>
 
-                    <span className="text-[10px] text-[#555555] font-mono mt-1">
+                    <span className="text-[10px] text-slate-400 font-mono mt-1">
                       {new Date(sess.createdAt).toLocaleDateString()}
                     </span>
                   </div>
@@ -278,106 +448,113 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Start New Interview / Context Setup */}
-        <div className="md:col-span-8 flex flex-col bg-[#0d0d0d] overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-[#282828]">
-          <div className="max-w-xl mx-auto w-full space-y-4">
-            {/* Header Title */}
-            <div className="space-y-1 pb-2 border-b border-[#202020]">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[#38bdf8]" />
-                <span>Start a New Interview</span>
+        {/* Right Column: Setup & Launch Form */}
+        <div className="md:col-span-8 flex flex-col bg-slate-950 overflow-y-auto p-6 scrollbar-thin">
+          <div className="max-w-xl mx-auto w-full space-y-5">
+            {/* Header */}
+            <div className="space-y-1 pb-3 border-b border-slate-800">
+              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-sky-400" />
+                <span>{t.sessionScreen.title}</span>
               </h2>
-              <p className="text-xs text-[#888888] leading-relaxed">
-                Add your resume or target job details so GhostCue can generate personalized answers tailored to your real background.
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {t.sessionScreen.subtitle}
               </p>
             </div>
 
-            {/* Quick Presets Strip */}
-            <div className="space-y-1.5 text-xs">
-              <label className="text-[#888888] font-semibold flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-[#facc15]" />
-                <span>Quick Templates</span>
-              </label>
-              <div className="grid grid-cols-2 gap-2">
+            {/* Quick Role Presets */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>{t.sessionScreen.presetsTitle}</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {PRESETS.map((p) => (
                   <button
                     key={p.name}
                     type="button"
                     onClick={() => handleApplyPreset(p)}
-                    className="p-2.5 text-left bg-[#141414] hover:bg-[#1c1c1c] border border-[#222222] hover:border-[#383838] transition-colors"
+                    className="flex flex-col text-left p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-sky-500/50 rounded-xl transition-all shadow-sm group"
                   >
-                    <span className="block font-bold text-white text-xs">{p.name}</span>
-                    <span className="text-[11px] text-[#777777] line-clamp-1 mt-0.5">{p.role}</span>
+                    <span className="text-xs font-bold text-slate-200 group-hover:text-sky-300">
+                      {p.name}
+                    </span>
+                    <span className="text-[11px] text-slate-400 truncate mt-0.5">{p.role}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Form Fields */}
-            <div className="space-y-3.5 text-xs">
-              {/* Session Name & Company */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <label className="text-white font-semibold">Interview Title</label>
+            <div className="space-y-4 text-xs font-sans">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Title */}
+                <div className="space-y-1.5">
+                  <label className="block text-slate-200 font-semibold">
+                    {t.settings.interviewTitle}
+                  </label>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => handleTitleChange(e.target.value)}
-                    placeholder="e.g. Stripe Technical Round"
-                    className="w-full px-3 py-2 bg-[#141414] border border-[#242424] text-white focus:outline-none focus:border-[#444444]"
+                    placeholder="e.g. Google L5 Frontend Interview"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-white font-semibold">Company (Optional)</label>
+
+                {/* Company */}
+                <div className="space-y-1.5">
+                  <label className="block text-slate-200 font-semibold">
+                    {t.settings.companyName}
+                  </label>
                   <input
                     type="text"
                     value={company}
                     onChange={(e) => handleCompanyChange(e.target.value)}
-                    placeholder="e.g. Google, Apple, Startup"
-                    className="w-full px-3 py-2 bg-[#141414] border border-[#242424] text-white focus:outline-none focus:border-[#444444]"
+                    placeholder="e.g. Stripe / Meta / Startup"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400"
                   />
                 </div>
               </div>
 
-              {/* Target Role */}
-              <div className="space-y-1">
-                <label className="flex items-center gap-1.5 text-white font-semibold">
-                  <Briefcase className="w-3.5 h-3.5 text-[#38bdf8]" />
-                  <span>Target Role</span>
+              {/* Role */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-slate-200 font-semibold">
+                  <Briefcase className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.settings.targetRole}</span>
                 </label>
                 <input
                   type="text"
                   value={role}
                   onChange={(e) => handleRoleChange(e.target.value)}
                   placeholder="e.g. Senior Software Engineer / Full Stack"
-                  className="w-full px-3 py-2 bg-[#141414] border border-[#242424] text-white focus:outline-none focus:border-[#444444]"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400"
                 />
               </div>
 
-              {/* Job Description */}
-              <div className="space-y-1">
-                <label className="flex items-center gap-1.5 text-white font-semibold">
-                  <FileText className="w-3.5 h-3.5 text-[#38bdf8]" />
-                  <span>Job Requirements / Focus Topics</span>
+              {/* Job Requirements */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-slate-200 font-semibold">
+                  <FileText className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.settings.jobDescription}</span>
                 </label>
                 <textarea
                   rows={3}
                   value={jobDescription}
                   onChange={(e) => handleJobDescChange(e.target.value)}
-                  placeholder="Paste key responsibilities or tech stack..."
-                  className="w-full px-3 py-2 bg-[#141414] border border-[#242424] text-white focus:outline-none focus:border-[#444444] text-xs leading-relaxed"
+                  placeholder="Paste responsibilities, key tech stack, or interview expectations..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 text-xs leading-relaxed"
                 />
               </div>
 
-              {/* Candidate Resume / Experience with Upload Button */}
-              <div className="space-y-1.5">
+              {/* Resume / Background */}
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-white font-semibold">
-                    <UserCheck className="w-3.5 h-3.5 text-[#4ade80]" />
-                    <span>Your Resume / Background & Strengths</span>
+                  <label className="flex items-center gap-1.5 text-slate-200 font-semibold">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t.settings.resumeText}</span>
                   </label>
 
-                  {/* Upload Resume Button */}
                   <div className="flex items-center gap-2">
                     <input
                       type="file"
@@ -390,17 +567,17 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isParsingResume}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-[#1e1e1e] hover:bg-[#2a2a2a] text-xs text-[#38bdf8] hover:text-white border border-[#333333] transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-sky-400 hover:text-sky-300 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
                     >
-                      <Upload className="w-3 h-3" />
-                      <span>{isParsingResume ? "Reading..." : "Upload Resume (PDF/DOCX/TXT)"}</span>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{isParsingResume ? "Extracting..." : "Upload Resume (PDF/TXT)"}</span>
                     </button>
                   </div>
                 </div>
 
                 {uploadedFileName && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 bg-[#162216] border border-[#1f381f] text-[#4ade80] text-xs">
-                    <FileCheck className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 text-xs rounded-lg">
+                    <FileCheck className="w-4 h-4 text-emerald-400" />
                     <span>Loaded resume from <strong>{uploadedFileName}</strong></span>
                   </div>
                 )}
@@ -409,8 +586,78 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                   rows={4}
                   value={candidateResume}
                   onChange={(e) => handleResumeTextChange(e.target.value)}
-                  placeholder="Paste your past experience, notable projects, or upload your resume above..."
-                  className="w-full px-3 py-2 bg-[#141414] border border-[#242424] text-white focus:outline-none focus:border-[#444444] text-xs leading-relaxed font-sans"
+                  placeholder="Paste your past experience, notable projects, and key achievements..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 text-xs leading-relaxed"
+                />
+              </div>
+
+              {/* Project Directory Context */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-slate-200 font-semibold">
+                    <FolderGit2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Project & Repository Context (Optional)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Deep codebase Q&A support
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={folderInputRef}
+                    onChange={handleHtmlFolderUpload}
+                    // @ts-ignore
+                    webkitdirectory=""
+                    directory=""
+                    multiple
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSelectFolderDialog}
+                    disabled={isScanningDir}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-bold rounded-lg transition-colors shadow-sm shrink-0 focus-visible:ring-2 focus-visible:ring-sky-400"
+                    title="Select folder"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{isScanningDir ? "Scanning..." : "Select Folder"}</span>
+                  </button>
+
+                  <input
+                    type="text"
+                    value={projectDirectory}
+                    onChange={(e) => handleProjectDirectoryChange(e.target.value)}
+                    placeholder="Or enter local path (e.g. g:/Project/my-app)..."
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => handleScanProjectDirectory()}
+                    disabled={isScanningDir || !projectDirectory.trim()}
+                    className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-colors shrink-0"
+                    title="Scan directory"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>{t.common.search}</span>
+                  </button>
+                </div>
+
+                {scanStatus && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 text-xs rounded-lg">
+                    <FileCheck className="w-4 h-4 text-emerald-400" />
+                    <span>{scanStatus}</span>
+                  </div>
+                )}
+
+                <textarea
+                  rows={4}
+                  value={projectContext}
+                  onChange={(e) => handleProjectContextChange(e.target.value)}
+                  placeholder="Scanned codebase structure, README summaries, or architecture notes..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs leading-relaxed font-mono"
                 />
               </div>
             </div>
@@ -420,11 +667,11 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
               <button
                 type="button"
                 onClick={handleCreateAndLaunch}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-[#222222] hover:bg-[#303030] text-white font-bold text-xs uppercase tracking-wider border border-[#383838] transition-colors shadow-lg active:scale-[0.99]"
+                className="w-full flex items-center justify-center gap-2 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg focus-visible:ring-2 focus-visible:ring-sky-400 active:scale-[0.99]"
               >
-                <Play className="w-3.5 h-3.5 fill-current text-[#4ade80]" />
-                <span>Start Live Interview Assistant</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                <Play className="w-4 h-4 fill-current text-white" />
+                <span>{t.sessionScreen.startBtn}</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
               </button>
             </div>
           </div>

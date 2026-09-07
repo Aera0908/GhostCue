@@ -16,6 +16,11 @@ export interface AppConfig {
   vad_speech_threshold_ms: number;
   vad_silence_cutoff_ms: number;
 
+  // Language & Localization
+  ui_language?: string; // "en" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru"
+  stt_language?: string; // "auto" | "en" | "zh" | "es" | "ja" | "de" | "fr" | "pt" | "ko" | "ru" | "hi" | "ar"
+  response_language?: string; // "auto" | "en" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru" | "hi" | "ar"
+
   // STT Engine
   stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "mock" | string;
   whisper_model_path: string;
@@ -41,6 +46,8 @@ export interface AppConfig {
   interview_title?: string;
   job_description: string;
   candidate_resume: string;
+  project_directory?: string;
+  project_context?: string;
   system_prompt_override: string;
   auto_trigger_enabled: boolean;
   max_context_turns: number;

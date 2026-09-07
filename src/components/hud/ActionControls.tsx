@@ -1,21 +1,66 @@
 import React, { useState } from "react";
-import { Sparkles, Code2, HelpCircle, Layers, Square, Send } from "lucide-react";
+import { Sparkles, Code2, Layers, Square, Send, FileText, Monitor, HelpCircle as QuestionIcon } from "lucide-react";
+import { useTranslation } from "../../i18n";
 
 interface ActionControlsProps {
   isStreaming: boolean;
   onTriggerAction: (action: string, customQuery?: string) => void;
   onCancel: () => void;
-  bgOpacity?: number;
 }
 
 export const ActionControls: React.FC<ActionControlsProps> = ({
   isStreaming,
   onTriggerAction,
   onCancel,
-  bgOpacity = 0.94,
 }) => {
+  const { t } = useTranslation();
   const [customInput, setCustomInput] = useState("");
   const [selectedActionType, setSelectedActionType] = useState<string>("hint");
+
+  const presetActions = [
+    {
+      id: "hint",
+      label: t.actions.answer,
+      desc: `${t.actions.answerDesc} (Ctrl+Shift+Space)`,
+      icon: Sparkles,
+      color: "text-amber-400",
+    },
+    {
+      id: "code",
+      label: t.actions.code,
+      desc: `${t.actions.codeDesc} (Ctrl+Shift+K)`,
+      icon: Code2,
+      color: "text-sky-400",
+    },
+    {
+      id: "clarify",
+      label: t.actions.clarify,
+      desc: `${t.actions.clarifyDesc} (Ctrl+Shift+L)`,
+      icon: QuestionIcon,
+      color: "text-purple-400",
+    },
+    {
+      id: "elaborate",
+      label: t.actions.systemDesign,
+      desc: `${t.actions.systemDesignDesc} (Ctrl+Shift+E)`,
+      icon: Layers,
+      color: "text-emerald-400",
+    },
+    {
+      id: "summary",
+      label: t.actions.summary,
+      desc: `${t.actions.summaryDesc} (Ctrl+Shift+U)`,
+      icon: FileText,
+      color: "text-indigo-400",
+    },
+    {
+      id: "vision",
+      label: t.actions.screenVision,
+      desc: `${t.actions.screenVisionDesc} (Ctrl+Shift+S)`,
+      icon: Monitor,
+      color: "text-rose-400",
+    },
+  ];
 
   const handleSubmitCustom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,109 +71,85 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
 
   return (
     <div
-      style={{ backgroundColor: `rgba(18, 18, 18, ${Math.min(1, bgOpacity + 0.05)})` }}
-      className="flex flex-col gap-2 p-2.5 border-t border-[#252525] select-none font-sans"
+      role="region"
+      aria-label="AI Prompt Actions and Query Bar"
+      className="flex flex-col gap-2 p-3 bg-slate-900/95 border-t border-slate-800 select-none font-sans"
     >
-      {/* Action Buttons Row */}
-      <div className="flex items-center gap-1.5">
-        {/* Instant Answer */}
-        <button
-          type="button"
-          onClick={() => onTriggerAction("hint")}
-          disabled={isStreaming}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-[#252525] hover:bg-[#333333] text-white text-xs font-bold transition-colors disabled:opacity-40"
-          title="Generate instant answer (Ctrl+Shift+Space)"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#facc15]" />
-          <span>Answer</span>
-          <span className="hidden xl:inline text-[10px] text-[#888888] font-mono ml-1">⌃⇧␣</span>
-        </button>
+      {/* Quick Action Preset Chips */}
+      <div className="flex items-center gap-2 w-full">
+        {presetActions.map((preset) => {
+          const Icon = preset.icon;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onTriggerAction(preset.id)}
+              disabled={isStreaming}
+              aria-label={preset.desc}
+              className="flex-1 min-w-0 h-9 px-2 flex items-center justify-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-100 text-xs font-semibold rounded-lg shadow-sm transition-all disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-sky-400"
+              title={preset.desc}
+            >
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${preset.color}`} />
+              <span className="truncate whitespace-nowrap">{preset.label}</span>
+            </button>
+          );
+        })}
 
-        {/* Code Solution */}
-        <button
-          type="button"
-          onClick={() => onTriggerAction("code")}
-          disabled={isStreaming}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-[#252525] hover:bg-[#333333] text-white text-xs font-bold transition-colors disabled:opacity-40"
-          title="Generate code & solution (Ctrl+Shift+K)"
-        >
-          <Code2 className="w-3.5 h-3.5 text-[#38bdf8]" />
-          <span>Code</span>
-          <span className="hidden xl:inline text-[10px] text-[#888888] font-mono ml-1">⌃⇧K</span>
-        </button>
-
-        {/* Clarifying Questions */}
-        <button
-          type="button"
-          onClick={() => onTriggerAction("clarify")}
-          disabled={isStreaming}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-[#252525] hover:bg-[#333333] text-white text-xs font-bold transition-colors disabled:opacity-40"
-          title="Questions to ask the interviewer (Ctrl+Shift+L)"
-        >
-          <HelpCircle className="w-3.5 h-3.5 text-[#c084fc]" />
-          <span>Ask Question</span>
-          <span className="hidden xl:inline text-[10px] text-[#888888] font-mono ml-1">⌃⇧L</span>
-        </button>
-
-        {/* Deep Dive */}
-        <button
-          type="button"
-          onClick={() => onTriggerAction("elaborate")}
-          disabled={isStreaming}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-[#252525] hover:bg-[#333333] text-white text-xs font-bold transition-colors disabled:opacity-40"
-          title="Deep dive & architectural trade-offs (Ctrl+Shift+E)"
-        >
-          <Layers className="w-3.5 h-3.5 text-[#4ade80]" />
-          <span>Explain More</span>
-          <span className="hidden xl:inline text-[10px] text-[#888888] font-mono ml-1">⌃⇧E</span>
-        </button>
-
-        {/* Stop Button */}
+        {/* Cancel Generation Button */}
         {isStreaming && (
           <button
             type="button"
             onClick={onCancel}
-            className="flex items-center gap-1.5 py-1.5 px-3 bg-[#3f1c1c] hover:bg-[#522424] text-[#fca5a5] text-xs font-bold transition-colors animate-pulse"
-            title="Stop generation (Esc)"
+            aria-label={t.actions.stopAi}
+            className="h-9 px-3 flex items-center justify-center gap-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-xs font-bold rounded-lg transition-colors animate-pulse shrink-0"
+            title={`${t.actions.stopAi} (Esc)`}
           >
-            <Square className="w-3 h-3 fill-current" />
+            <Square className="w-3 h-3 fill-current shrink-0" />
             <span>Stop</span>
           </button>
         )}
       </div>
 
       {/* Manual Prompt Input Bar */}
-      <form onSubmit={handleSubmitCustom} className="flex items-center gap-1.5">
-        {/* Mode Selector */}
+      <form onSubmit={handleSubmitCustom} className="flex items-center gap-2">
+        {/* Category Mode Selector */}
         <select
           value={selectedActionType}
           onChange={(e) => setSelectedActionType(e.target.value)}
-          className="px-2 py-1.5 text-xs bg-[#1f1f1f] text-white border border-[#303030] focus:outline-none cursor-pointer font-medium"
+          aria-label="Response generation style"
+          className="px-2.5 py-1.5 text-xs bg-slate-800 text-slate-100 border border-slate-700 rounded-lg focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer font-medium"
         >
-          <option value="hint">Answer</option>
-          <option value="code">Code</option>
-          <option value="clarify">Question</option>
-          <option value="elaborate">Deep Dive</option>
+          <option value="hint">{t.actions.answer} ({t.actions.answerDesc})</option>
+          <option value="code">{t.actions.code} ({t.actions.codeDesc})</option>
+          <option value="ask">{t.actions.ask} ({t.actions.askDesc})</option>
+          <option value="clarify">{t.actions.clarify} ({t.actions.clarifyDesc})</option>
+          <option value="elaborate">{t.actions.systemDesign} ({t.actions.systemDesignDesc})</option>
+          <option value="summary">Summary</option>
+          <option value="vision">{t.actions.screenVision}</option>
         </select>
 
-        {/* Query Input */}
-        <input
-          type="text"
-          value={customInput}
-          onChange={(e) => setCustomInput(e.target.value)}
-          placeholder="Ask AI anything or paste a problem (e.g. 'Tell me about yourself')..."
-          className="flex-1 px-3 py-1.5 text-xs bg-[#0a0a0a] text-white placeholder-[#777777] border border-[#2a2a2a] focus:outline-none focus:border-[#555555]"
-        />
+        {/* Text Input */}
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            aria-label="Enter question or prompt for AI"
+            placeholder={t.actions.queryPlaceholder}
+            className="w-full px-3 py-1.5 text-xs bg-slate-950 text-slate-100 placeholder-slate-400 border border-slate-700 rounded-lg focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400"
+          />
+        </div>
 
         {/* Send Button */}
         <button
           type="submit"
           disabled={!customInput.trim() || isStreaming}
-          className="flex items-center gap-1 px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a3a3a] disabled:opacity-30 text-white text-xs font-bold transition-colors"
-          title="Send (Enter)"
+          aria-label={t.actions.sendPrompt}
+          className="flex items-center gap-1 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+          title={`${t.actions.sendPrompt} (Enter)`}
         >
           <Send className="w-3 h-3" />
-          <span>Send</span>
+          <span>{t.actions.sendPrompt.split(" ")[0]}</span>
         </button>
       </form>
     </div>

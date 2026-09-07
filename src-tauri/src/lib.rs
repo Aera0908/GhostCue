@@ -1,13 +1,15 @@
 pub mod audio;
 pub mod config;
 pub mod llm;
+pub mod project_scanner;
 pub mod state;
 pub mod stt;
 pub mod window;
 
 use log::info;
 use state::AppState;
-use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use window::apply_anti_capture_protection;
 
@@ -29,13 +31,92 @@ pub fn run() {
             // Initialize app state
             let app_state = AppState::new(app_data_dir);
 
-            // Apply initial Anti-Capture Protection to main window
+            // Apply initial Anti-Capture Protection and ensure skip_taskbar is active
             if let Some(main_window) = app.get_webview_window("main") {
+                let _ = main_window.set_skip_taskbar(true);
                 let initial_config = app_state.config_manager.get_config();
                 if initial_config.anti_capture_enabled {
                     let _ = apply_anti_capture_protection(&main_window, true);
                 }
             }
+
+            // Create System Tray Menu (shown in Windows Notification / Tray overflow)
+            let show_item = MenuItem::with_id(app, "toggle_show", "Show / Hide GhostCue", true, None::<&str>)?;
+            let mic_item = MenuItem::with_id(app, "toggle_capture", "Start / Pause Audio Capture", true, None::<&str>)?;
+            let panic_item = MenuItem::with_id(app, "panic_hide", "Panic Hide (Ctrl+Shift+H)", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit GhostCue", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(app, &[&show_item, &mic_item, &panic_item, &quit_item])?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .tooltip("GhostCue Stealth Interview Assistant")
+                .show_menu_on_left_click(false);
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "toggle_show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                if is_visible {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "toggle_capture" => {
+                            let state = app.state::<AppState>();
+                            let is_running = {
+                                let cap = state.audio_capture.lock();
+                                cap.is_running()
+                            };
+                            if is_running {
+                                let mut cap = state.audio_capture.lock();
+                                cap.stop();
+                            } else {
+                                let config = state.config_manager.get_config();
+                                let mut cap = state.audio_capture.lock();
+                                let sender = state.vad_segment_sender.clone();
+                                let _ = cap.start(app.clone(), &config, sender);
+                            }
+                        }
+                        "panic_hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let is_visible = window.is_visible().unwrap_or(false);
+                            if is_visible {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
 
             // Spawn background STT worker
             let stt_receiver = app_state.vad_segment_receiver.clone();
@@ -68,7 +149,7 @@ pub fn run() {
 
             app.manage(app_state);
 
-            info!("GhostCue setup completed successfully.");
+            info!("GhostCue setup completed successfully with System Tray integration and Taskbar hidden.");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -78,6 +159,7 @@ pub fn run() {
             window::toggle_hud_visibility,
             window::set_hud_opacity,
             window::start_dragging,
+            window::exit_app,
             // Config
             config::get_app_config,
             config::save_app_config,
@@ -95,6 +177,9 @@ pub fn run() {
             // LLM
             llm::generate_ai_suggestion,
             llm::cancel_ai_suggestion,
+            // Project Scanner
+            project_scanner::scan_project_directory,
+            project_scanner::select_directory_dialog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostCue application");

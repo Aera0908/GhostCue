@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { Briefcase, FileText, UserCheck, Code, Upload, FileCheck } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { extractTextFromFile } from "../../utils/fileParser";
+import { useTranslation } from "../../i18n";
 
 interface ContextSettingsProps {
   config: AppConfig;
@@ -9,6 +10,7 @@ interface ContextSettingsProps {
 }
 
 export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChange }) => {
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(() => localStorage.getItem("ghostcue_resume_filename"));
   const [isParsingResume, setIsParsingResume] = useState(false);
@@ -59,41 +61,41 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
   return (
     <div className="space-y-4 text-xs font-sans">
       {/* Target Role Card */}
-      <div className="p-3 bg-[#141414] border border-[#222222] space-y-1.5">
-        <label className="flex items-center gap-2 font-semibold text-white">
-          <Briefcase className="w-3.5 h-3.5 text-[#38bdf8]" />
-          <span>Target Interview Role</span>
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+        <label className="flex items-center gap-2 font-semibold text-slate-100">
+          <Briefcase className="w-4 h-4 text-sky-400" />
+          <span>{t.settings.targetRole}</span>
         </label>
         <input
           type="text"
           value={config.target_role}
           onChange={(e) => handleRoleChange(e.target.value)}
           placeholder="e.g. Senior Software Engineer / Distributed Systems"
-          className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#262626] text-[#eeeeee] placeholder-[#555555] focus:outline-none focus:border-[#444444]"
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400"
         />
       </div>
 
       {/* Job Description Card */}
-      <div className="p-3 bg-[#141414] border border-[#222222] space-y-1.5">
-        <label className="flex items-center gap-2 font-semibold text-white">
-          <FileText className="w-3.5 h-3.5 text-[#38bdf8]" />
-          <span>Job Description / Key Requirements</span>
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+        <label className="flex items-center gap-2 font-semibold text-slate-100">
+          <FileText className="w-4 h-4 text-sky-400" />
+          <span>{t.settings.jobDescription}</span>
         </label>
         <textarea
           rows={4}
           value={config.job_description}
           onChange={(e) => handleJobDescChange(e.target.value)}
           placeholder="Paste key responsibilities, tech stack, or focus areas..."
-          className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#262626] text-[#eeeeee] placeholder-[#555555] focus:outline-none focus:border-[#444444] leading-relaxed"
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 leading-relaxed"
         />
       </div>
 
-      {/* Candidate Resume Card with Upload Button */}
-      <div className="p-3 bg-[#141414] border border-[#222222] space-y-2">
+      {/* Candidate Resume Card */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2.5">
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 font-semibold text-white">
-            <UserCheck className="w-3.5 h-3.5 text-[#4ade80]" />
-            <span>Your Resume & Background Experience</span>
+          <label className="flex items-center gap-2 font-semibold text-slate-100">
+            <UserCheck className="w-4 h-4 text-emerald-400" />
+            <span>{t.settings.resumeText}</span>
           </label>
 
           <div className="flex items-center gap-2">
@@ -108,17 +110,17 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isParsingResume}
-              className="flex items-center gap-1 px-2.5 py-1 bg-[#1e1e1e] hover:bg-[#282828] text-[#38bdf8] hover:text-white border border-[#333333] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-sky-300 font-semibold border border-slate-700 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
             >
-              <Upload className="w-3 h-3" />
-              <span>{isParsingResume ? "Reading..." : "Upload Resume (PDF/DOCX/TXT)"}</span>
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isParsingResume ? "Reading..." : "Upload Resume (PDF/TXT)"}</span>
             </button>
           </div>
         </div>
 
         {uploadedFileName && (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-[#162216] border border-[#1f381f] text-[#4ade80]">
-            <FileCheck className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 rounded-lg">
+            <FileCheck className="w-4 h-4 text-emerald-400" />
             <span>Loaded resume from <strong>{uploadedFileName}</strong></span>
           </div>
         )}
@@ -128,22 +130,22 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
           value={config.candidate_resume}
           onChange={(e) => handleResumeTextChange(e.target.value)}
           placeholder="Paste your past experience, notable projects, or upload your resume above..."
-          className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#262626] text-[#eeeeee] placeholder-[#555555] focus:outline-none focus:border-[#444444] leading-relaxed"
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 leading-relaxed"
         />
       </div>
 
       {/* Custom Prompt Override */}
-      <div className="p-3 bg-[#141414] border border-[#222222] space-y-1.5">
-        <label className="flex items-center gap-2 font-semibold text-white">
-          <Code className="w-3.5 h-3.5 text-[#c084fc]" />
-          <span>Custom AI Instructions (Optional)</span>
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+        <label className="flex items-center gap-2 font-semibold text-slate-100">
+          <Code className="w-4 h-4 text-purple-400" />
+          <span>{t.settings.systemPromptOverride}</span>
         </label>
         <textarea
           rows={3}
           value={config.system_prompt_override}
           onChange={(e) => onChange("system_prompt_override", e.target.value)}
           placeholder="Leave blank to use GhostCue's standard concise coaching guidelines..."
-          className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#262626] text-[#eeeeee] placeholder-[#555555] focus:outline-none focus:border-[#444444] leading-relaxed"
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 leading-relaxed"
         />
       </div>
     </div>

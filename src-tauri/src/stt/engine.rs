@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use chrono::Utc;
 use crossbeam_channel::Receiver;
-use log::{debug, info, warn};
+use log::{info, warn};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -94,12 +94,13 @@ impl SttEngineManager {
             // Execute transcription via selected STT provider
             let transcript_result = if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
                 let deepgram = DeepgramClient::new(config.deepgram_api_key.clone());
-                deepgram.transcribe_buffer(&segment.samples).await
+                deepgram.transcribe_buffer(&segment.samples, &config.stt_language).await
             } else if !config.openai_api_key.is_empty() {
                 super::whisper::transcribe_with_cloud_whisper(
                     &config.openai_api_key,
                     &config.openai_base_url,
                     &segment.samples,
+                    &config.stt_language,
                 ).await
             } else if !config.whisper_model_path.is_empty() {
                 let whisper = LocalWhisperEngine::new(Some(std::path::PathBuf::from(&config.whisper_model_path)));

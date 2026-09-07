@@ -1,47 +1,65 @@
 import React from "react";
-import { Eye, ShieldCheck, Settings, Mic, MicOff, MousePointerClick, EyeOff, LayoutGrid, Sparkles } from "lucide-react";
+import {
+  ShieldCheck,
+  Settings,
+  LayoutGrid,
+  Sparkles,
+  X,
+  MessageSquare,
+  Headphones,
+  Columns2,
+  Minimize,
+  Maximize,
+} from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AppConfig } from "../../types/config";
 import { TauriApi } from "../../services/tauriApi";
+import { useTranslation } from "../../i18n";
+
+export type HudLayoutMode = "split" | "ask" | "listen";
+export type FontScale = "sm" | "md" | "lg" | "xl";
 
 interface HudHeaderProps {
   config: AppConfig;
   opacity: number;
-  bgOpacity?: number;
-  onOpacityChange: (val: number) => void;
-  clickThrough: boolean;
-  onToggleClickThrough: () => void;
+  onOpacityChange?: (val: number) => void;
+  clickThrough?: boolean;
+  onToggleClickThrough?: () => void;
   onToggleAntiCapture: () => void;
   onToggleAutoTrigger: () => void;
   onOpenSettings: () => void;
   onOpenSessions: () => void;
-  onPanicHide: () => void;
-  isCapturing: boolean;
-  onToggleCapture: () => void;
-  activeProvider: string;
+  layoutMode: HudLayoutMode;
+  onChangeLayoutMode: (mode: HudLayoutMode) => void;
+  fontScale: FontScale;
+  onChangeFontScale: (scale: FontScale) => void;
+  isCompactPill: boolean;
+  onToggleCompactPill: () => void;
+  activeProvider?: string;
   sessionTitle?: string;
 }
 
 export const HudHeader: React.FC<HudHeaderProps> = ({
   config,
   opacity,
-  bgOpacity,
-  onOpacityChange,
-  clickThrough,
-  onToggleClickThrough,
   onToggleAntiCapture,
   onToggleAutoTrigger,
   onOpenSettings,
   onOpenSessions,
-  onPanicHide,
-  isCapturing,
-  onToggleCapture,
+  layoutMode,
+  onChangeLayoutMode,
+  fontScale,
+  onChangeFontScale,
+  isCompactPill,
+  onToggleCompactPill,
   activeProvider,
   sessionTitle,
 }) => {
+  const { t } = useTranslation();
+
   const triggerDrag = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest("button, input, textarea, select, a, [role='slider']")) {
+    if (target.closest("button, input, textarea, select, a, [role='slider'], [role='button']")) {
       return;
     }
     TauriApi.startDragging();
@@ -52,160 +70,191 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
     }
   };
 
-  const alpha = bgOpacity ?? opacity;
+  const cycleFontScale = () => {
+    const scales: FontScale[] = ["sm", "md", "lg", "xl"];
+    const nextIdx = (scales.indexOf(fontScale) + 1) % scales.length;
+    onChangeFontScale(scales[nextIdx]);
+  };
 
   return (
     <header
       data-tauri-drag-region
       onMouseDown={triggerDrag}
-      style={{ backgroundColor: `rgba(20, 20, 20, ${alpha})` }}
-      className="flex items-center justify-between px-3 py-2 select-none cursor-move border-b border-[#252525]"
+      style={{ backgroundColor: `rgba(15, 23, 42, ${opacity})` }}
+      role="banner"
+      className="flex items-center justify-between px-3.5 py-2 select-none cursor-move border-b border-slate-700/80 rounded-t-xl transition-colors font-sans gap-3"
     >
-      {/* Brand & Sessions Button */}
-      <div className="flex items-center gap-2">
+      {/* Left: Sessions & Segmented Mode Switcher */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Sessions Button */}
         <button
           type="button"
           onClick={onOpenSessions}
-          className="flex items-center gap-1.5 px-2 py-1 bg-[#1e1e1e] hover:bg-[#282828] text-white text-xs font-semibold transition-colors"
-          title="Open Interview History & Context Hub"
+          aria-label="Open sessions hub"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-lg border border-slate-700 shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 shrink-0"
+          title={t.header.sessionSetup}
         >
-          <LayoutGrid className="w-3.5 h-3.5 text-[#38bdf8]" />
-          <span>Sessions</span>
+          <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
+          <span>{t.header.sessionSetup.split(" ")[0] || "Sessions"}</span>
         </button>
 
         {sessionTitle && (
-          <span className="text-xs text-[#888888] truncate max-w-[130px] hidden sm:inline">
+          <span className="text-xs text-slate-400 truncate max-w-[130px] hidden lg:inline font-medium">
             / {sessionTitle}
           </span>
         )}
 
-        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#1e1e1e] text-[#777777] uppercase hidden md:inline">
-          {activeProvider}
-        </span>
+        {/* Segmented Mode Switcher */}
+        {!isCompactPill && (
+          <nav aria-label="HUD layout view" className="flex items-center bg-slate-900/90 p-0.5 rounded-lg border border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => onChangeLayoutMode("split")}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                layoutMode === "split"
+                  ? "bg-sky-600 text-white font-semibold shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Split View"
+            >
+              <Columns2 className="w-3 h-3" />
+              <span>Split</span>
+            </button>
 
-        {/* Anti-Capture Stealth Status */}
-        <button
-          type="button"
-          onClick={onToggleAntiCapture}
-          className={`flex items-center gap-1 px-1.5 py-1 text-xs transition-colors ${
-            config.anti_capture_enabled
-              ? "bg-[#162216] text-[#4ade80] hover:bg-[#1c2e1c]"
-              : "bg-[#281616] text-[#f87171] hover:bg-[#341d1d]"
-          }`}
-          title="Ghost Mode: Hides this window from Zoom, Teams, Meet, and screen recordings."
-        >
-          <ShieldCheck className="w-3 h-3" />
-          <span>{config.anti_capture_enabled ? "Ghost Mode" : "Visible"}</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => onChangeLayoutMode("ask")}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                layoutMode === "ask"
+                  ? "bg-sky-600 text-white font-semibold shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title={t.header.askMode}
+            >
+              <MessageSquare className="w-3 h-3" />
+              <span>{t.header.askMode.split(" ")[0] || "Ask"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeLayoutMode("listen")}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                layoutMode === "listen"
+                  ? "bg-sky-600 text-white font-semibold shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Listen Mode"
+            >
+              <Headphones className="w-3 h-3" />
+              <span>Listen</span>
+            </button>
+          </nav>
+        )}
       </div>
 
-      {/* Center Dotted Square Drag Handle */}
+      {/* Center: Draggable Handle */}
       <div
         data-tauri-drag-region
         onMouseDown={triggerDrag}
-        className="flex items-center justify-center p-1.5 text-[#666666] hover:text-[#bbbbbb] transition-colors cursor-move"
+        className="flex-1 flex items-center justify-center py-1 text-slate-500 hover:text-slate-300 transition-colors cursor-move"
         title="Drag Window"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          className="pointer-events-none"
-        >
-          <circle cx="3" cy="3" r="1.2" />
-          <circle cx="8" cy="3" r="1.2" />
-          <circle cx="13" cy="3" r="1.2" />
-          <circle cx="3" cy="8" r="1.2" />
-          <circle cx="8" cy="8" r="1.2" />
-          <circle cx="13" cy="8" r="1.2" />
-          <circle cx="3" cy="13" r="1.2" />
-          <circle cx="8" cy="13" r="1.2" />
-          <circle cx="13" cy="13" r="1.2" />
-        </svg>
+        <div className="flex gap-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+          <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+          <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+        </div>
       </div>
 
-      {/* Control Actions & Sliders */}
-      <div className="flex items-center gap-1.5">
-        {/* Opacity Controller */}
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1c1c1c] text-[#cccccc]" title="HUD Transparency">
-          <Eye className="w-3.5 h-3.5 text-[#777777]" />
-          <input
-            type="range"
-            min="0.2"
-            max="1.0"
-            step="0.02"
-            value={opacity}
-            onChange={(e) => onOpacityChange(parseFloat(e.target.value))}
-            className="w-12 h-1 accent-[#ffffff] bg-[#333333] cursor-pointer"
-          />
-          <span className="text-[11px] font-mono text-[#888888] w-6 text-right">
-            {Math.round(opacity * 100)}%
-          </span>
-        </div>
+      {/* Right: Essential Action Controls */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Ghost Mode Toggle */}
+        <button
+          type="button"
+          onClick={onToggleAntiCapture}
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 ${
+            config.anti_capture_enabled
+              ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60"
+              : "bg-rose-950/60 border-rose-500/40 text-rose-300 hover:bg-rose-900/60"
+          }`}
+          title={t.settings.antiCaptureDesc}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>{config.anti_capture_enabled ? t.header.stealthMode : t.header.stealthOff}</span>
+        </button>
 
-        {/* Auto-Answer Quick Toggle */}
+        {/* Active Model/Provider tag */}
+        {activeProvider && (
+          <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 uppercase rounded-md hidden xl:inline">
+            {activeProvider}
+          </span>
+        )}
+
+        {/* Auto-Answer Toggle */}
         <button
           type="button"
           onClick={onToggleAutoTrigger}
-          className={`flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 ${
             config.auto_trigger_enabled
-              ? "bg-[#163650] border border-[#38bdf8]/60 text-[#38bdf8] hover:bg-[#1a4466]"
-              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc] hover:bg-[#252525]"
+              ? "bg-sky-950/70 border-sky-500/50 text-sky-300 hover:bg-sky-900/70"
+              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
           }`}
-          title="Auto-Answer: Automatically generates AI answers when interviewer questions are detected."
+          title={t.header.autoTriggerActive}
         >
-          <Sparkles className={`w-3.5 h-3.5 ${config.auto_trigger_enabled ? "text-[#38bdf8]" : "text-[#777777]"}`} />
-          <span className="hidden sm:inline">Auto: {config.auto_trigger_enabled ? "ON" : "OFF"}</span>
+          <Sparkles className={`w-3.5 h-3.5 ${config.auto_trigger_enabled ? "text-sky-400" : "text-slate-400"}`} />
+          <span className="hidden sm:inline">Auto: {config.auto_trigger_enabled ? t.common.on : t.common.off}</span>
         </button>
 
-        {/* Audio Capture Toggle */}
+        {/* Text Size (Font scale) */}
         <button
           type="button"
-          onClick={onToggleCapture}
-          className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
-            isCapturing
-              ? "bg-[#1c1c1c] text-[#4ade80] hover:bg-[#252525]"
-              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc]"
-          }`}
-          title={isCapturing ? "Listening to audio" : "Audio paused"}
+          onClick={cycleFontScale}
+          aria-label={`Change text size. Currently ${fontScale.toUpperCase()}`}
+          className="flex items-center justify-center px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+          title={`Text Size: ${fontScale.toUpperCase()} (Click to cycle)`}
         >
-          {isCapturing ? <Mic className="w-3.5 h-3.5 text-[#4ade80]" /> : <MicOff className="w-3.5 h-3.5 text-[#777777]" />}
-          <span className="hidden sm:inline">{isCapturing ? "Live" : "Paused"}</span>
+          A<span className="text-[10px]">{fontScale === "xl" ? "++" : fontScale === "lg" ? "+" : ""}</span>
         </button>
 
-        {/* Click-Through Toggle */}
-        <button
-          type="button"
-          onClick={onToggleClickThrough}
-          className={`p-1.5 text-xs transition-colors ${
-            clickThrough
-              ? "bg-[#2a1e36] text-[#c084fc]"
-              : "bg-[#1c1c1c] text-[#777777] hover:text-[#cccccc] hover:bg-[#252525]"
-          }`}
-          title="Click-Through: Lets you click behind the HUD (Ctrl+Shift+C)"
-        >
-          <MousePointerClick className="w-3.5 h-3.5" />
-        </button>
-
-        {/* Settings Button */}
+        {/* Settings */}
         <button
           type="button"
           onClick={onOpenSettings}
-          className="p-1.5 bg-[#1c1c1c] text-[#777777] hover:text-[#ffffff] hover:bg-[#252525] transition-colors"
-          title="Settings"
+          aria-label="Open settings and shortcut cheatsheet"
+          className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+          title={`${t.header.settings} (Ctrl+,)`}
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
 
-        {/* Panic Hide */}
+        {/* Compact Pill Toggle */}
         <button
           type="button"
-          onClick={onPanicHide}
-          className="p-1.5 bg-[#261414] text-[#f87171] hover:bg-[#381c1c] transition-colors"
-          title="Hide HUD immediately (Ctrl+Shift+H)"
+          onClick={onToggleCompactPill}
+          aria-label={isCompactPill ? "Expand HUD" : "Compact Pill HUD"}
+          className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+          title={isCompactPill ? "Expand HUD" : "Compact Pill Mode"}
         >
-          <EyeOff className="w-3.5 h-3.5" />
+          {isCompactPill ? <Maximize className="w-3.5 h-3.5" /> : <Minimize className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Close */}
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await TauriApi.exitApp();
+            } catch {
+              try {
+                getCurrentWebviewWindow().close();
+              } catch (_) {}
+            }
+          }}
+          aria-label="Close GhostCue"
+          className="p-1.5 bg-slate-800 hover:bg-rose-900 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-rose-400"
+          title={t.common.close}
+        >
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
     </header>

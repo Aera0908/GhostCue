@@ -7,10 +7,17 @@ use tauri::{AppHandle, Emitter};
 use futures_util::StreamExt;
 
 pub const WHISPER_MODELS: &[(&str, &str, &str)] = &[
-    ("tiny.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin", "75 MB"),
-    ("base.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", "142 MB"),
-    ("small.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin", "466 MB"),
-    ("medium.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin", "1.5 GB"),
+    // English-specific models
+    ("tiny.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin", "75 MB (EN)"),
+    ("base.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", "142 MB (EN)"),
+    ("small.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin", "466 MB (EN)"),
+    ("medium.en", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin", "1.5 GB (EN)"),
+    // Multilingual models (support 99+ languages)
+    ("tiny", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", "75 MB (Multilingual)"),
+    ("base", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", "142 MB (Multilingual)"),
+    ("small", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", "466 MB (Multilingual)"),
+    ("medium", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin", "1.5 GB (Multilingual)"),
+    ("large-v3-turbo", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin", "1.6 GB (Multilingual)"),
 ];
 
 pub struct LocalWhisperEngine {
@@ -77,6 +84,7 @@ pub async fn transcribe_with_cloud_whisper(
     api_key: &str,
     base_url: &str,
     samples: &[f32],
+    language: &str,
 ) -> Result<String, String> {
     if api_key.trim().is_empty() {
         return Err("API key is empty".to_string());
@@ -105,11 +113,17 @@ pub async fn transcribe_with_cloud_whisper(
         .mime_str("audio/wav")
         .map_err(|e| format!("Failed to set MIME type: {}", e))?;
 
-    let form = reqwest::multipart::Form::new()
+    let mut form = reqwest::multipart::Form::new()
         .part("file", part)
         .text("model", "whisper-1")
-        .text("language", "en")
         .text("response_format", "json");
+
+    let clean_lang = language.trim().to_lowercase();
+    if !clean_lang.is_empty() && clean_lang != "auto" {
+        // e.g. "en", "es", "zh", "ja", "de", "fr", "pt", "ko", "ru", "hi", "ar"
+        let lang_code = clean_lang.split('-').next().unwrap_or(&clean_lang);
+        form = form.text("language", lang_code.to_string());
+    }
 
     let res = client
         .post(&url)

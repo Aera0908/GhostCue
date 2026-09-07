@@ -48,12 +48,15 @@ impl LlmOrchestrator {
 
         let action = match action_name.as_str() {
             "code" => ActionType::CodeSolution,
+            "ask" | "generic" | "question" => ActionType::GenericQuestion,
             "clarify" => ActionType::Clarification,
-            "elaborate" => ActionType::Elaborate,
-            _ => ActionType::GeneralHint,
+            "elaborate" | "deepdive" => ActionType::Elaborate,
+            "summary" | "bullets" => ActionType::Summary,
+            "vision" | "screen" => ActionType::VisionScreen,
+            _ => ActionType::InterviewAnswer,
         };
 
-        let system_prompt = PromptBuilder::build_system_prompt(&config);
+        let system_prompt = PromptBuilder::build_system_prompt(&config, action);
         let user_prompt = PromptBuilder::build_user_prompt(
             &history,
             action,

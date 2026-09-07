@@ -3,9 +3,8 @@ pub mod ollama;
 pub mod openai;
 pub mod orchestrator;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 use crate::state::AppState;
-use crate::stt::engine::TranscriptSegment;
 
 #[tauri::command]
 pub async fn generate_ai_suggestion(

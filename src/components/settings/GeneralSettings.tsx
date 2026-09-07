@@ -1,6 +1,7 @@
 import React from "react";
-import { ShieldCheck, Command, Eye } from "lucide-react";
+import { ShieldCheck, Command, Eye, Globe, Bot } from "lucide-react";
 import { AppConfig } from "../../types/config";
+import { useTranslation, SupportedLocale } from "../../i18n";
 
 interface GeneralSettingsProps {
   config: AppConfig;
@@ -8,27 +9,80 @@ interface GeneralSettingsProps {
 }
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, onChange }) => {
+  const { t, locale, setLocale, languages, responseLanguages } = useTranslation();
+
+  const handleUiLanguageChange = (newLocale: string) => {
+    setLocale(newLocale as SupportedLocale);
+    onChange("ui_language", newLocale);
+  };
+
   const hotkeys = [
-    { key: "Ctrl + Shift + H", desc: "Panic Hide / Restore HUD instantly" },
-    { key: "Ctrl + Shift + C", desc: "Toggle Click-Through mode (pass clicks behind HUD)" },
-    { key: "Ctrl + Shift + Space", desc: "Force Instant Interview Hint" },
-    { key: "Ctrl + Shift + K", desc: "Generate Code Solution & Split IDE" },
-    { key: "Ctrl + Shift + L", desc: "Generate Clarifying Questions" },
-    { key: "Ctrl + Shift + E", desc: "Generate Architectural Deep Dive" },
-    { key: "Esc", desc: "Stop active AI generation" },
+    { key: "Ctrl + Shift + H", desc: t.header.hideHud },
+    { key: "Ctrl + Shift + C", desc: t.header.clickThrough },
+    { key: "Ctrl + Shift + Space", desc: t.actions.answerDesc },
+    { key: "Ctrl + Shift + K", desc: t.actions.codeDesc },
+    { key: "Ctrl + Shift + L", desc: t.actions.clarifyDesc },
+    { key: "Ctrl + Shift + E", desc: t.actions.systemDesignDesc },
+    { key: "Ctrl + Shift + S", desc: t.actions.screenVisionDesc },
+    { key: "Ctrl + Shift + M", desc: t.header.micMuted },
+    { key: "Esc", desc: t.actions.stopAi },
   ];
 
   return (
     <div className="space-y-4 text-sm font-sans">
+      {/* UI Display Language Card */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <Globe className="w-4 h-4 text-sky-400" />
+          <div>
+            <p className="font-bold text-slate-100 uppercase">{t.settings.uiLanguage}</p>
+            <p className="text-[11px] text-slate-400">{t.settings.uiLanguageDesc}</p>
+          </div>
+        </div>
+        <select
+          value={config.ui_language || locale}
+          onChange={(e) => handleUiLanguageChange(e.target.value)}
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-700 text-slate-100 rounded-lg text-xs focus:border-sky-500 focus:outline-none cursor-pointer"
+        >
+          {languages.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.flag} {lang.nativeLabel} ({lang.label})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* AI Response Language Card */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <Bot className="w-4 h-4 text-emerald-400" />
+          <div>
+            <p className="font-bold text-slate-100 uppercase">{t.settings.responseLanguage}</p>
+            <p className="text-[11px] text-slate-400">{t.settings.responseLanguageDesc}</p>
+          </div>
+        </div>
+        <select
+          value={config.response_language || "auto"}
+          onChange={(e) => onChange("response_language", e.target.value)}
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-700 text-slate-100 rounded-lg text-xs focus:border-emerald-500 focus:outline-none cursor-pointer"
+        >
+          {responseLanguages.map((rl) => (
+            <option key={rl.code} value={rl.code}>
+              {rl.flag} {rl.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Anti-Capture Card */}
-      <div className="p-3 bg-[#121212] border border-[#1f1f1f] space-y-2 font-mono text-xs">
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2 text-xs">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#4ade80]" />
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <div>
-              <p className="font-bold text-white uppercase">OS-Level Anti-Capture Stealth</p>
-              <p className="text-[11px] text-[#666666]">
-                Windows WDA_EXCLUDEFROMCAPTURE
+              <p className="font-bold text-slate-100 uppercase">{t.settings.antiCaptureTitle}</p>
+              <p className="text-[11px] text-slate-400">
+                Windows WDA_EXCLUDEFROMCAPTURE Protection
               </p>
             </div>
           </div>
@@ -36,22 +90,22 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, onChan
             type="checkbox"
             checked={config.anti_capture_enabled}
             onChange={(e) => onChange("anti_capture_enabled", e.target.checked)}
-            className="w-4 h-4 accent-white cursor-pointer"
+            className="w-4 h-4 accent-sky-400 cursor-pointer"
           />
         </div>
-        <p className="text-xs text-[#888888] font-sans leading-relaxed">
-          When enabled, the GhostCue HUD window is completely hidden from screen captures and screen shares in Zoom, Teams, Meet, Discord, OBS, and screenshot tools.
+        <p className="text-xs text-slate-300 leading-relaxed pt-1">
+          {t.settings.antiCaptureDesc}
         </p>
       </div>
 
       {/* Default Opacity Card */}
-      <div className="p-3 bg-[#121212] border border-[#1f1f1f] space-y-1.5 font-mono text-xs">
-        <div className="flex justify-between text-[#cccccc]">
-          <span className="flex items-center gap-2">
-            <Eye className="w-3.5 h-3.5 text-[#888888]" />
-            <span className="font-bold text-white uppercase">Default HUD Opacity</span>
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2 text-xs">
+        <div className="flex justify-between text-slate-200">
+          <span className="flex items-center gap-2 font-bold uppercase">
+            <Eye className="w-4 h-4 text-sky-400" />
+            <span>{t.settings.opacityTitle}</span>
           </span>
-          <span className="text-white font-bold">{Math.round(config.opacity * 100)}%</span>
+          <span className="text-slate-100 font-bold">{Math.round(config.opacity * 100)}%</span>
         </div>
         <input
           type="range"
@@ -60,22 +114,22 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, onChan
           step="0.02"
           value={config.opacity}
           onChange={(e) => onChange("opacity", parseFloat(e.target.value))}
-          className="w-full h-1.5 bg-[#080808] accent-white cursor-pointer"
+          className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
         />
       </div>
 
       {/* Shortcuts Guide Table Card */}
-      <div className="p-3 bg-[#121212] border border-[#1f1f1f] space-y-2 font-mono text-xs">
-        <h4 className="flex items-center gap-2 font-bold text-white uppercase">
-          <Command className="w-3.5 h-3.5 text-[#c084fc]" />
-          <span>Global Stealth Hotkeys</span>
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3 text-xs">
+        <h4 className="flex items-center gap-2 font-bold text-slate-100 uppercase tracking-wider">
+          <Command className="w-4 h-4 text-purple-400" />
+          <span>{t.settings.hotkeysTitle}</span>
         </h4>
 
-        <div className="bg-[#080808] border border-[#1c1c1c] divide-y divide-[#181818]">
+        <div className="bg-slate-950 border border-slate-800 rounded-lg divide-y divide-slate-800 overflow-hidden">
           {hotkeys.map((hk) => (
             <div key={hk.key} className="flex items-center justify-between px-3 py-2 text-xs">
-              <span className="text-[#cccccc] font-sans">{hk.desc}</span>
-              <kbd className="px-2 py-0.5 bg-[#181818] border border-[#282828] text-white font-mono text-[11px] font-bold">
+              <span className="text-slate-300 font-sans">{hk.desc}</span>
+              <kbd className="px-2 py-0.5 bg-slate-900 border border-slate-700 text-slate-200 font-mono text-[11px] font-bold rounded">
                 {hk.key}
               </kbd>
             </div>

@@ -115,3 +115,11 @@ pub async fn start_dragging(window: WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|e| format!("Failed to start dragging: {}", e))
 }
 
+/// Tauri Command: Close and exit application
+#[tauri::command]
+pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
+    info!("Exiting GhostCue application...");
+    app.exit(0);
+    Ok(())
+}
+

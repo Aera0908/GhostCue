@@ -23,6 +23,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   vad_sensitivity: 0.5,
   vad_speech_threshold_ms: 300,
   vad_silence_cutoff_ms: 800,
+  ui_language: "en",
+  stt_language: "auto",
+  response_language: "auto",
   stt_provider: "cloud_whisper",
   whisper_model_path: "",
   whisper_model_size: "base.en",
@@ -75,6 +78,14 @@ export const TauriApi = {
     } catch (e) {
       console.warn("startDragging error:", e);
     }
+  },
+
+  async exitApp(): Promise<void> {
+    if (!isTauri()) {
+      window.close();
+      return;
+    }
+    await invoke("exit_app");
   },
 
   // Config
@@ -171,6 +182,21 @@ export const TauriApi = {
   async cancelAiSuggestion(): Promise<void> {
     if (!isTauri()) return;
     await invoke("cancel_ai_suggestion");
+  },
+
+  // Project Scanner & Context
+  async selectDirectoryDialog(): Promise<string | null> {
+    if (!isTauri()) {
+      return null;
+    }
+    return await invoke<string | null>("select_directory_dialog");
+  },
+
+  async scanProjectDirectory(directoryPath: string): Promise<string> {
+    if (!isTauri()) {
+      return `### Mock Scanned Directory Context for: ${directoryPath}\n- Found package.json & README.md\n- Tech: React, TypeScript, Rust, SQLite\n- Architecture: Event-driven micro-HUD with zero-overhead audio streaming.`;
+    }
+    return await invoke<string>("scan_project_directory", { directoryPath });
   },
 
   // Event Listeners

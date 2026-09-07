@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use log::{debug, info};
+use log::info;
 
 pub const VAD_FRAME_SIZE: usize = 512; // 32ms at 16kHz
 pub const SAMPLE_RATE: usize = 16000;

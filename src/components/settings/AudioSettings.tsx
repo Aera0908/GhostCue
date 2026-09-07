@@ -39,8 +39,6 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
 
   useEffect(() => {
     fetchDevices();
-
-    // Ensure audio capture is running in backend
     TauriApi.startAudioCapture().catch(console.warn);
 
     let unlistenMic: (() => void) | undefined;
@@ -56,7 +54,6 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
       setLiveLoopbackActive(ev.active);
     }).then((u) => (unlistenLoopback = u));
 
-    // High-rate polling fallback to guarantee real-time updates across all webviews
     const pollInterval = setInterval(async () => {
       try {
         const lv = await TauriApi.getAudioLevels();
@@ -67,56 +64,13 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
       } catch (_) {}
     }, 50);
 
-    // Browser WebAudio fallback when testing in standard web browser
-    let browserStream: MediaStream | null = null;
-    let audioCtx: AudioContext | null = null;
-    let animFrame: number | null = null;
-
-    if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices
-          .getUserMedia({ audio: true })
-          .then((stream) => {
-            browserStream = stream;
-            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-            audioCtx = new AudioCtx();
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            const data = new Uint8Array(analyser.frequencyBinCount);
-
-            const loop = () => {
-              analyser.getByteTimeDomainData(data);
-              let maxVal = 0;
-              for (let i = 0; i < data.length; i++) {
-                const val = Math.abs(data[i] - 128);
-                if (val > maxVal) maxVal = val;
-              }
-              const level = Math.min(1.0, (maxVal / 128.0) * 3.5);
-              setLiveMicLevel(level);
-              setLiveMicActive(level > 0.05);
-              animFrame = requestAnimationFrame(loop);
-            };
-            loop();
-          })
-          .catch(console.warn);
-      }
-    }
-
     return () => {
       if (unlistenMic) unlistenMic();
       if (unlistenLoopback) unlistenLoopback();
       clearInterval(pollInterval);
-      if (animFrame) cancelAnimationFrame(animFrame);
-      if (browserStream) browserStream.getTracks().forEach((t) => t.stop());
-      if (audioCtx && (audioCtx as AudioContext).state !== "closed") {
-        (audioCtx as AudioContext).close().catch(() => {});
-      }
     };
   }, []);
 
-  // Web Audio test sound to verify real loopback capture via physical speaker output
   const handlePlayTestSound = () => {
     try {
       setIsPlayingTestSound(true);
@@ -126,14 +80,13 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
         audioCtx.resume();
       }
 
-      // Play 3-tone chime through speakers
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
 
       osc.type = "sine";
-      osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-      osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2); // E5
-      osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.4); // G5
+      osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2);
+      osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.4);
 
       gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
@@ -156,7 +109,6 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
     }
   };
 
-  // Immediate hot-swap when device changes
   const handleDeviceChange = async (key: keyof AppConfig, value: any) => {
     onChange(key, value);
     const updatedConfig = { ...config, [key]: value };
@@ -175,164 +127,160 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
 
   return (
     <div className="space-y-4 text-xs font-sans">
-      {/* --- 1. Live Hardware Audio Test Station --- */}
-      <div className="p-3.5 bg-[#111111] border border-[#2a2a2a] space-y-3">
+      {/* 1. Live Hardware Audio Test Station */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#4ade80] animate-pulse" />
-            <span className="font-bold text-white text-xs">Live Audio Hardware Monitor</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse" />
+            <span className="font-bold text-slate-100 text-xs">Live Audio Hardware Monitor</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#142814] text-[#4ade80]">
+            <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 rounded">
               WASAPI Engine Active
             </span>
             <button
               type="button"
               onClick={() => setShowTroubleshoot(!showTroubleshoot)}
-              className="text-[11px] text-[#888888] hover:text-white flex items-center gap-1"
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
             >
-              <HelpCircle className="w-3 h-3" />
+              <HelpCircle className="w-3.5 h-3.5" />
               <span>Help</span>
             </button>
           </div>
         </div>
 
-        {/* Live Microphone Test Bar */}
-        <div className="p-3 bg-[#0a0a0a] border border-[#222222] space-y-2">
+        {/* Live Mic Bar */}
+        <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-white font-semibold">
-              <Mic className="w-3.5 h-3.5 text-[#4ade80]" />
+            <div className="flex items-center gap-1.5 text-slate-100 font-semibold">
+              <Mic className="w-3.5 h-3.5 text-emerald-400" />
               <span>Microphone Input (You)</span>
               {config.audio_input_device && (
-                <span className="text-[10px] text-[#888888] font-mono truncate max-w-[180px] hidden sm:inline">
+                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[180px] hidden sm:inline">
                   [{config.audio_input_device}]
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-white text-xs font-bold">{micPct}%</span>
+              <span className="font-mono text-slate-100 text-xs font-bold">{micPct}%</span>
               {liveMicActive ? (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-[#163016] text-[#4ade80] text-[11px] font-bold border border-[#265026]">
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold rounded">
                   <CheckCircle2 className="w-3 h-3" />
                   <span>VOICE ACTIVE</span>
                 </span>
               ) : (
-                <span className="text-[10px] text-[#777777] font-mono px-1.5 py-0.5 bg-[#161616]">
+                <span className="text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-slate-900 border border-slate-800 rounded">
                   Ready / Listening
                 </span>
               )}
             </div>
           </div>
 
-          {/* Level Meter Track */}
-          <div className="w-full h-2.5 bg-[#1c1c1c] overflow-hidden">
+          <div className="w-full h-2.5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all duration-75 ease-out ${
-                liveMicActive ? "bg-[#4ade80]" : "bg-[#258045]"
+              className={`h-full transition-all duration-75 ease-out rounded-full ${
+                liveMicActive ? "bg-emerald-400" : "bg-emerald-800/60"
               }`}
               style={{ width: `${Math.max(2, micPct)}%` }}
             />
           </div>
         </div>
 
-        {/* Live Loopback (Interviewer Voice) Test Bar */}
-        <div className="p-3 bg-[#0a0a0a] border border-[#222222] space-y-2">
+        {/* Live Loopback Bar */}
+        <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-white font-semibold">
-              <Volume2 className="w-3.5 h-3.5 text-[#38bdf8]" />
-              <span>Interviewer / System Sound (Loopback)</span>
+            <div className="flex items-center gap-1.5 text-slate-100 font-semibold">
+              <Volume2 className="w-3.5 h-3.5 text-sky-400" />
+              <span>Interviewer / System Loopback (Speaker Output)</span>
               {config.audio_output_device && (
-                <span className="text-[10px] text-[#888888] font-mono truncate max-w-[180px] hidden sm:inline">
+                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[180px] hidden sm:inline">
                   [{config.audio_output_device}]
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-white text-xs font-bold">{loopbackPct}%</span>
+              <span className="font-mono text-slate-100 text-xs font-bold">{loopbackPct}%</span>
               {liveLoopbackActive ? (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-[#14283c] text-[#38bdf8] text-[11px] font-bold border border-[#1f4060]">
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-sky-950 border border-sky-500/50 text-sky-300 text-[11px] font-bold rounded">
                   <CheckCircle2 className="w-3 h-3" />
                   <span>AUDIO ACTIVE</span>
                 </span>
               ) : (
-                <span className="text-[10px] text-[#777777] font-mono px-1.5 py-0.5 bg-[#161616]">
+                <span className="text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-slate-900 border border-slate-800 rounded">
                   Ready / Listening
                 </span>
               )}
             </div>
           </div>
 
-          {/* Level Meter Track */}
-          <div className="w-full h-2.5 bg-[#1c1c1c] overflow-hidden">
+          <div className="w-full h-2.5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all duration-75 ease-out ${
-                liveLoopbackActive ? "bg-[#38bdf8]" : "bg-[#226a90]"
+              className={`h-full transition-all duration-75 ease-out rounded-full ${
+                liveLoopbackActive ? "bg-sky-400" : "bg-sky-800/60"
               }`}
               style={{ width: `${Math.max(2, loopbackPct)}%` }}
             />
           </div>
 
-          {/* Play Test Tone Button */}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-[#777777]">
-              Play audio through your speakers to test interviewer capture
+            <span className="text-[11px] text-slate-400">
+              Play audio through your speakers to test loopback capture
             </span>
             <button
               type="button"
               onClick={handlePlayTestSound}
               disabled={isPlayingTestSound}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#2c2c2c] text-[#38bdf8] hover:text-white border border-[#383838] transition-colors font-medium"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-white border border-slate-700 rounded-lg transition-colors font-semibold"
             >
-              <Play className="w-3 h-3 fill-current" />
-              <span>{isPlayingTestSound ? "Playing Test Chime..." : "Play Test Chime"}</span>
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>{isPlayingTestSound ? "Playing Chime..." : "Play Test Tone"}</span>
             </button>
           </div>
         </div>
 
-        {/* Troubleshooting Info Box */}
         {showTroubleshoot && (
-          <div className="p-3 bg-[#181818] border border-[#333333] space-y-2 text-xs">
-            <div className="flex items-center gap-1.5 font-bold text-white">
-              <AlertTriangle className="w-4 h-4 text-[#facc15]" />
-              <span>Windows Microphone & Speaker Selection Tips</span>
+          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-2 text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-slate-100">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <span>Audio Configuration Tips</span>
             </div>
-            <ol className="list-decimal list-inside space-y-1 text-[#cccccc] leading-relaxed">
-              <li>Select your real physical microphone below (e.g. <strong>Microphone (M-830)</strong> or <strong>Usb Audio Device</strong>) instead of virtual ones.</li>
-              <li>Select your real physical headphones/speakers below (e.g. <strong>Earbuds (Realtek)</strong> or <strong>Speakers</strong>) instead of FxSound.</li>
-              <li>Make sure <strong>"Let desktop apps access your microphone"</strong> is turned ON in Windows Privacy Settings.</li>
+            <ol className="list-decimal list-inside space-y-1.5 text-slate-300 leading-relaxed">
+              <li>Select your actual physical microphone below (e.g. <strong>Realtek Audio</strong> or <strong>USB Mic</strong>).</li>
+              <li>Select the headphones or speakers you use to listen to the interview call.</li>
+              <li>Ensure <strong>"Let desktop apps access your microphone"</strong> is enabled in Windows Privacy Settings.</li>
             </ol>
           </div>
         )}
       </div>
 
-      {/* --- 2. Device Selection --- */}
+      {/* 2. Device Selection */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-white">Audio Endpoints</span>
+          <span className="font-semibold text-slate-100">Hardware Audio Endpoints</span>
           <button
             type="button"
             onClick={fetchDevices}
             disabled={isLoadingDevices}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-[#1c1c1c] hover:bg-[#282828] text-[#cccccc] hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-lg transition-colors font-medium"
           >
-            <RefreshCw className={`w-3 h-3 ${isLoadingDevices ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? "animate-spin text-sky-400" : ""}`} />
             <span>Refresh Devices</span>
           </button>
         </div>
 
-        {/* Input Device Dropdown */}
-        <div className="p-3 bg-[#141414] border border-[#222222] space-y-1.5">
+        {/* Input Device */}
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-1.5 font-semibold text-white">
-              <Mic className="w-3.5 h-3.5 text-[#4ade80]" />
+            <label className="flex items-center gap-2 font-semibold text-slate-100">
+              <Mic className="w-4 h-4 text-emerald-400" />
               <span>Microphone Input Device</span>
             </label>
-            <label className="flex items-center gap-1.5 text-xs text-[#888888] cursor-pointer">
+            <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
               <input
                 type="checkbox"
                 checked={config.mic_enabled}
                 onChange={(e) => handleDeviceChange("mic_enabled", e.target.checked)}
-                className="accent-[#4ade80]"
+                className="accent-emerald-400 w-3.5 h-3.5"
               />
               <span>Enabled</span>
             </label>
@@ -341,7 +289,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
           <select
             value={config.audio_input_device || ""}
             onChange={(e) => handleDeviceChange("audio_input_device", e.target.value || null)}
-            className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#2a2a2a] text-[#eeeeee] focus:outline-none focus:border-[#555555] cursor-pointer font-medium"
+            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-sky-400 cursor-pointer font-medium"
           >
             <option value="">Auto-Select Default</option>
             {inputDevices.map((d) => (
@@ -350,24 +298,21 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
               </option>
             ))}
           </select>
-          <p className="text-[11px] text-[#777777]">
-            Select your physical microphone (e.g. <strong>Microphone (M-830)</strong>, <strong>Realtek</strong>, or <strong>USB Audio</strong>) to avoid disconnected virtual devices.
-          </p>
         </div>
 
-        {/* Loopback Device Dropdown */}
-        <div className="p-3 bg-[#141414] border border-[#222222] space-y-1.5">
+        {/* Loopback Device */}
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-1.5 font-semibold text-white">
-              <Volume2 className="w-3.5 h-3.5 text-[#38bdf8]" />
-              <span>Interviewer Loopback Speaker (Where you hear sound)</span>
+            <label className="flex items-center gap-2 font-semibold text-slate-100">
+              <Volume2 className="w-4 h-4 text-sky-400" />
+              <span>Interviewer Loopback Speaker</span>
             </label>
-            <label className="flex items-center gap-1.5 text-xs text-[#888888] cursor-pointer">
+            <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
               <input
                 type="checkbox"
                 checked={config.loopback_enabled}
                 onChange={(e) => handleDeviceChange("loopback_enabled", e.target.checked)}
-                className="accent-[#38bdf8]"
+                className="accent-sky-400 w-3.5 h-3.5"
               />
               <span>Enabled</span>
             </label>
@@ -376,7 +321,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
           <select
             value={config.audio_output_device || ""}
             onChange={(e) => handleDeviceChange("audio_output_device", e.target.value || null)}
-            className="w-full px-3 py-2 bg-[#0c0c0c] border border-[#2a2a2a] text-[#eeeeee] focus:outline-none focus:border-[#555555] cursor-pointer font-medium"
+            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-sky-400 cursor-pointer font-medium"
           >
             <option value="">Auto-Select Default</option>
             {outputDevices.map((d) => (
@@ -385,24 +330,20 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
               </option>
             ))}
           </select>
-          <p className="text-[11px] text-[#777777]">
-            Select the speaker or headphones you are wearing (e.g. <strong>Earbuds (Realtek)</strong> or <strong>Speakers</strong>) to capture interviewer audio.
-          </p>
         </div>
       </div>
 
-      {/* --- 3. Voice Sensitivity Tuning --- */}
-      <div className="p-3 bg-[#141414] border border-[#222222] space-y-3">
-        <h4 className="flex items-center gap-2 font-semibold text-white">
-          <Sliders className="w-3.5 h-3.5 text-[#facc15]" />
-          <span>Speech Detection Sensitivity</span>
+      {/* 3. VAD Sensitivity */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3.5">
+        <h4 className="flex items-center gap-2 font-semibold text-slate-100">
+          <Sliders className="w-4 h-4 text-amber-400" />
+          <span>Speech Detection Sensitivity (VAD)</span>
         </h4>
 
-        {/* Sensitivity Slider */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-[#cccccc]">
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-slate-300">
             <span>Voice Pickup Sensitivity</span>
-            <span className="text-white font-bold">{Math.round(config.vad_sensitivity * 100)}%</span>
+            <span className="text-slate-100 font-bold">{Math.round(config.vad_sensitivity * 100)}%</span>
           </div>
           <input
             type="range"
@@ -411,19 +352,14 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
             step="0.05"
             value={config.vad_sensitivity}
             onChange={(e) => handleDeviceChange("vad_sensitivity", parseFloat(e.target.value))}
-            className="w-full h-1.5 bg-[#0c0c0c] accent-white cursor-pointer"
+            className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-[#666666]">
-            <span>Higher (picks up quiet whispers)</span>
-            <span>Lower (filters room noise)</span>
-          </div>
         </div>
 
-        {/* Silence Cutoff Delay */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-[#cccccc]">
-            <span>Sentence Pause Timeout</span>
-            <span className="text-white font-bold">{config.vad_silence_cutoff_ms} ms</span>
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-slate-300">
+            <span>Sentence Pause Silence Cutoff</span>
+            <span className="text-slate-100 font-bold">{config.vad_silence_cutoff_ms} ms</span>
           </div>
           <input
             type="range"
@@ -432,18 +368,17 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
             step="100"
             value={config.vad_silence_cutoff_ms}
             onChange={(e) => handleDeviceChange("vad_silence_cutoff_ms", parseInt(e.target.value))}
-            className="w-full h-1.5 bg-[#0c0c0c] accent-white cursor-pointer"
+            className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
           />
         </div>
 
-        {/* Auto Trigger Toggle */}
-        <div className="flex items-center justify-between p-2 bg-[#0c0c0c] border border-[#222222]">
-          <div className="flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-[#facc15]" />
+        <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-lg">
+          <div className="flex items-center gap-2.5">
+            <Zap className="w-4 h-4 text-amber-400" />
             <div>
-              <p className="font-semibold text-white">Auto-Answer on Question</p>
-              <p className="text-[11px] text-[#666666]">
-                Automatically suggest an answer when interviewer finishes speaking
+              <p className="font-semibold text-slate-100">Auto-Answer on Question</p>
+              <p className="text-[11px] text-slate-400">
+                Automatically triggers answer when interviewer completes a question
               </p>
             </div>
           </div>
@@ -451,7 +386,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
             type="checkbox"
             checked={config.auto_trigger_enabled}
             onChange={(e) => handleDeviceChange("auto_trigger_enabled", e.target.checked)}
-            className="w-4 h-4 accent-white cursor-pointer"
+            className="w-4 h-4 accent-sky-400 cursor-pointer"
           />
         </div>
       </div>

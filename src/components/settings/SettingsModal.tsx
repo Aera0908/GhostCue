@@ -6,6 +6,7 @@ import { AudioSettings } from "./AudioSettings";
 import { ModelSettings } from "./ModelSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { DEFAULT_CONFIG } from "../../services/tauriApi";
+import { useTranslation } from "../../i18n";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   config: initialConfig,
   onSave,
 }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>("context");
   const [formData, setFormData] = useState<AppConfig>(initialConfig);
   const [isSaving, setIsSaving] = useState(false);
@@ -51,114 +53,122 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 font-sans">
-      <div className="relative flex flex-col w-full max-w-2xl max-h-[85vh] bg-[#0e0e0e] border border-[#262626] shadow-2xl overflow-hidden">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-b border-[#222222] select-none font-mono">
-          <div className="flex items-center gap-2 text-white font-bold text-sm">
-            <SettingsIcon className="w-4 h-4 text-[#888888]" />
-            <span>GHOSTCUE SETTINGS</span>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm font-sans"
+    >
+      <div className="relative flex flex-col w-full max-w-2xl max-h-[85vh] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-slate-850 border-b border-slate-700 select-none">
+          <div className="flex items-center gap-2.5 text-slate-100 font-bold text-sm">
+            <div className="p-1.5 bg-sky-500/20 text-sky-400 rounded-lg">
+              <SettingsIcon className="w-4 h-4" />
+            </div>
+            <span id="settings-modal-title">{t.settings.modalTitle}</span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-[#888888] hover:text-white hover:bg-[#222222] transition-colors"
+            aria-label="Close settings"
+            className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-700/60 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Tabs Bar */}
-        <div className="flex bg-[#121212] border-b border-[#222222] text-xs font-mono select-none">
+        {/* Tabs */}
+        <nav aria-label="Settings categories" className="flex bg-slate-900 border-b border-slate-800 text-xs font-semibold select-none px-2 pt-1 gap-1">
           <button
             type="button"
             onClick={() => setActiveTab("context")}
-            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-lg transition-all ${
               activeTab === "context"
-                ? "border-white text-white font-bold bg-[#1a1a1a]"
-                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
+                ? "bg-slate-800 text-sky-300 border-t-2 border-sky-400 font-bold shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>CONTEXT</span>
+            <span>{t.settings.tabContext.toUpperCase()}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("audio")}
-            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-lg transition-all ${
               activeTab === "audio"
-                ? "border-white text-white font-bold bg-[#1a1a1a]"
-                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
+                ? "bg-slate-800 text-sky-300 border-t-2 border-sky-400 font-bold shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>AUDIO & VAD</span>
+            <span>{t.settings.tabAudio.toUpperCase()}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("models")}
-            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-lg transition-all ${
               activeTab === "models"
-                ? "border-white text-white font-bold bg-[#1a1a1a]"
-                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
+                ? "bg-slate-800 text-sky-300 border-t-2 border-sky-400 font-bold shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
-            <span>MODELS & API</span>
+            <span>{t.settings.tabModel.toUpperCase()}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("general")}
-            className={`flex items-center gap-1.5 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-lg transition-all ${
               activeTab === "general"
-                ? "border-white text-white font-bold bg-[#1a1a1a]"
-                : "border-transparent text-[#777777] hover:text-[#cccccc] hover:bg-[#161616]"
+                ? "bg-slate-800 text-sky-300 border-t-2 border-sky-400 font-bold shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
             }`}
           >
             <SettingsIcon className="w-3.5 h-3.5" />
-            <span>STEALTH & KEYS</span>
+            <span>{t.settings.tabGeneral.toUpperCase()}</span>
           </button>
-        </div>
+        </nav>
 
-        {/* Modal Content */}
-        <div className="flex-1 p-4 overflow-y-auto max-h-[62vh] scrollbar-thin scrollbar-thumb-[#2a2a2a] bg-[#0a0a0a]">
+        {/* Tab Content */}
+        <div className="flex-1 p-5 overflow-y-auto max-h-[62vh] scrollbar-thin bg-slate-950">
           {activeTab === "context" && <ContextSettings config={formData} onChange={handleChange} />}
           {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} />}
           {activeTab === "models" && <ModelSettings config={formData} onChange={handleChange} />}
           {activeTab === "general" && <GeneralSettings config={formData} onChange={handleChange} />}
         </div>
 
-        {/* Modal Footer Bar */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-t border-[#222222] select-none font-mono text-xs">
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-slate-850 border-t border-slate-700 select-none text-xs">
           <button
             type="button"
             onClick={handleResetDefaults}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#282828] text-[#888888] hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>RESET DEFAULTS</span>
+            <span>Reset Defaults</span>
           </button>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 bg-[#1e1e1e] hover:bg-[#282828] text-[#cccccc] hover:text-white transition-colors"
+              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 font-medium"
             >
-              CANCEL
+              {t.common.cancel}
             </button>
             <button
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-white font-bold transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-sm transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-sky-400"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? "SAVING..." : "SAVE CONFIG"}</span>
+              <span>{isSaving ? t.common.loading : t.common.save}</span>
             </button>
           </div>
         </div>

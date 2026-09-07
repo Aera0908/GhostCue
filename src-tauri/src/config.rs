@@ -8,6 +8,14 @@ use log::{info, warn};
 use tauri::State;
 use crate::state::AppState;
 
+fn default_ui_language() -> String {
+    "en".to_string()
+}
+
+fn default_auto_language() -> String {
+    "auto".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     // Window & Stealth
@@ -26,6 +34,14 @@ pub struct AppConfig {
     pub vad_sensitivity: f32, // 0.1 to 1.0 (threshold)
     pub vad_speech_threshold_ms: u64, // e.g. 300 ms
     pub vad_silence_cutoff_ms: u64, // e.g. 800 ms
+
+    // Language & Localization
+    #[serde(default = "default_ui_language")]
+    pub ui_language: String, // "en", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru"
+    #[serde(default = "default_auto_language")]
+    pub stt_language: String, // "auto", "en", "zh", "es", "ja", "de", "fr", "pt", "ko", "ru", "hi", "ar"
+    #[serde(default = "default_auto_language")]
+    pub response_language: String, // "auto", "en", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru", "hi", "ar"
 
     // STT Engine
     pub stt_provider: String, // "local_whisper" | "deepgram" | "mock"
@@ -52,6 +68,8 @@ pub struct AppConfig {
     pub interview_title: String,
     pub job_description: String,
     pub candidate_resume: String,
+    pub project_directory: String,
+    pub project_context: String,
     pub system_prompt_override: String,
     pub auto_trigger_enabled: bool,
     pub max_context_turns: usize,
@@ -73,6 +91,10 @@ impl Default for AppConfig {
             vad_sensitivity: 0.5,
             vad_speech_threshold_ms: 300,
             vad_silence_cutoff_ms: 800,
+
+            ui_language: "en".to_string(),
+            stt_language: "auto".to_string(),
+            response_language: "auto".to_string(),
 
             stt_provider: "cloud_whisper".to_string(),
             whisper_model_path: "".to_string(),
@@ -96,6 +118,8 @@ impl Default for AppConfig {
             interview_title: "".to_string(),
             job_description: "Full Stack / Distributed Systems Engineer. Tech: Rust, TypeScript, React, System Design, Algorithms.".to_string(),
             candidate_resume: "Experienced engineer with 6+ years in backend systems, high-concurrency microservices, TypeScript, and modern frontend frameworks.".to_string(),
+            project_directory: "".to_string(),
+            project_context: "".to_string(),
             system_prompt_override: "".to_string(),
             auto_trigger_enabled: true,
             max_context_turns: 10,
@@ -229,6 +253,21 @@ impl AppConfig {
         if let Ok(val) = env::var("SYSTEM_PROMPT_OVERRIDE") {
             if !val.trim().is_empty() {
                 config.system_prompt_override = val.trim().to_string();
+            }
+        }
+        if let Ok(val) = env::var("UI_LANGUAGE") {
+            if !val.trim().is_empty() {
+                config.ui_language = val.trim().to_string();
+            }
+        }
+        if let Ok(val) = env::var("STT_LANGUAGE") {
+            if !val.trim().is_empty() {
+                config.stt_language = val.trim().to_string();
+            }
+        }
+        if let Ok(val) = env::var("RESPONSE_LANGUAGE") {
+            if !val.trim().is_empty() {
+                config.response_language = val.trim().to_string();
             }
         }
     }
