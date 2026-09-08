@@ -13,6 +13,7 @@ interface SettingsModalProps {
   onClose: () => void;
   config: AppConfig;
   onSave: (config: AppConfig) => Promise<void>;
+  inLiveHud?: boolean;
 }
 
 type SettingsTab = "context" | "audio" | "models" | "general";
@@ -22,6 +23,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   config: initialConfig,
   onSave,
+  inLiveHud = false,
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>("context");
@@ -137,7 +139,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Tab Content */}
         <div className="flex-1 p-5 overflow-y-auto max-h-[62vh] scrollbar-thin bg-slate-950">
           {activeTab === "context" && <ContextSettings config={formData} onChange={handleChange} />}
-          {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} />}
+          {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} inLiveHud={inLiveHud} />}
           {activeTab === "models" && <ModelSettings config={formData} onChange={handleChange} />}
           {activeTab === "general" && <GeneralSettings config={formData} onChange={handleChange} />}
         </div>

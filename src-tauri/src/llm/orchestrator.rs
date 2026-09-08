@@ -6,9 +6,10 @@ use tauri::{AppHandle, Emitter};
 
 use crate::config::AppConfig;
 use crate::stt::engine::TranscriptSegment;
+use super::gemini::GeminiClient;
 use super::ollama::OllamaClient;
 use super::openai::OpenAiClient;
-use super::prompt::{ActionType, PromptBuilder};
+use super::prompt::{ActionType, PastAnswerEntry, PromptBuilder};
 
 pub struct LlmOrchestrator {
     active_abort_flag: Arc<Mutex<Option<Arc<AtomicBool>>>>,
@@ -36,6 +37,7 @@ impl LlmOrchestrator {
         history: Vec<TranscriptSegment>,
         action_name: String,
         custom_query: Option<String>,
+        past_answers: Option<Vec<PastAnswerEntry>>,
     ) -> Result<String, String> {
         // Cancel any existing generation in flight
         self.cancel_generation();
@@ -62,12 +64,15 @@ impl LlmOrchestrator {
             action,
             custom_query.as_deref(),
             config.max_context_turns,
+            past_answers.as_deref(),
         );
 
         let payload_start = serde_json::json!({
             "action": action_name,
+            "query": custom_query,
             "provider": config.llm_provider,
             "model": match config.llm_provider.as_str() {
+                "gemini" => config.gemini_model.clone(),
                 "ollama" => config.ollama_model.clone(),
                 "openai" => config.openai_model.clone(),
                 "anthropic" => config.anthropic_model.clone(),
@@ -79,6 +84,10 @@ impl LlmOrchestrator {
         let _ = app_handle.emit("llm-start", payload_start);
 
         let result = match config.llm_provider.as_str() {
+            "gemini" => {
+                let client = GeminiClient::new(config.gemini_api_key, config.gemini_model);
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+            }
             "ollama" => {
                 let client = OllamaClient::new(config.ollama_endpoint, config.ollama_model);
                 client.stream_generate(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
@@ -114,6 +123,7 @@ impl LlmOrchestrator {
                 let payload_complete = serde_json::json!({
                     "text": full_text.clone(),
                     "action": action_name,
+                    "query": custom_query,
                 });
                 let _ = app_handle.emit_to("main", "llm-complete", payload_complete.clone());
                 let _ = app_handle.emit("llm-complete", payload_complete);

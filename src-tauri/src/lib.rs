@@ -121,8 +121,6 @@ pub fn run() {
             // Spawn background STT worker
             let stt_receiver = app_state.vad_segment_receiver.clone();
             let config_mgr_clone = app_state.config_manager.clone();
-            let config_mgr_clone2 = app_state.config_manager.clone();
-            let llm_orch_clone = app_state.llm_orchestrator.clone();
             let worker_handle = app_handle.clone();
             let history_state_clone = app_state.stt_engine.clone();
 
@@ -132,16 +130,9 @@ pub fn run() {
                     stt_receiver,
                     history_state_clone.conversation_history.clone(),
                     move || config_mgr_clone.get_config(),
-                    move |query| {
-                        let h = worker_handle.clone();
-                        let cfg = config_mgr_clone2.get_config();
-                        let orch = llm_orch_clone.clone();
-                        let hist = history_state_clone.get_history();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = orch
-                                .generate_suggestion(h, cfg, hist, "hint".to_string(), Some(query))
-                                .await;
-                        });
+                    |_query| {
+                        // Auto-triggering is centrally coordinated by the frontend
+                        // which has real-time session, HUD state, and pause awareness.
                     },
                 )
                 .await;
@@ -177,9 +168,11 @@ pub fn run() {
             // LLM
             llm::generate_ai_suggestion,
             llm::cancel_ai_suggestion,
-            // Project Scanner
+            // Project Scanner & File Export
             project_scanner::scan_project_directory,
+            project_scanner::scan_multiple_project_directories,
             project_scanner::select_directory_dialog,
+            project_scanner::save_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostCue application");

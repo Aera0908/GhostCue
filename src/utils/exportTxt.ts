@@ -1,14 +1,15 @@
 import { InterviewSession } from "../types/session";
 import { AppConfig } from "../types/config";
+import { TauriApi } from "../services/tauriApi";
 
 /**
  * Format an entire interview session (transcripts, AI Q&A logs, and context)
- * into a clean, human-readable text document and trigger a .txt file download.
+ * into a clean, human-readable text document and trigger native file save.
  */
-export const exportSessionAsTxt = (
+export const exportSessionAsTxt = async (
   session: InterviewSession,
   config?: AppConfig
-): void => {
+): Promise<string | null> => {
   const lines: string[] = [];
 
   const divider = "=".repeat(72);
@@ -96,8 +97,19 @@ export const exportSessionAsTxt = (
 
   if (session.projectContext || config?.project_context) {
     lines.push(`[Project / Codebase Repository Context]`);
-    if (session.projectDirectory || config?.project_directory) {
-      lines.push(`Directory: ${session.projectDirectory || config?.project_directory}`);
+    const allDirs = session.projectDirectories && session.projectDirectories.length > 0
+      ? session.projectDirectories
+      : config?.project_directories && config.project_directories.length > 0
+      ? config.project_directories
+      : session.projectDirectory
+      ? [session.projectDirectory]
+      : config?.project_directory
+      ? [config.project_directory]
+      : [];
+
+    if (allDirs.length > 0) {
+      lines.push(`Connected Projects (${allDirs.length}):`);
+      allDirs.forEach((d, i) => lines.push(`  ${i + 1}. ${d}`));
     }
     lines.push((session.projectContext || config?.project_context || "").trim());
     lines.push("");
@@ -108,18 +120,15 @@ export const exportSessionAsTxt = (
   lines.push(divider);
 
   const fullText = lines.join("\n");
-
-  // Create downloadable blob
-  const blob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
   const safeTitle = title.replace(/[^a-z0-9]/gi, "_").toLowerCase().slice(0, 30);
   const dateStamp = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `ghostcue_${safeTitle}_${dateStamp}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const defaultFilename = `ghostcue_${safeTitle}_${dateStamp}.txt`;
+
+  try {
+    const savedPath = await TauriApi.saveTextFile(defaultFilename, fullText);
+    return savedPath;
+  } catch (err) {
+    console.error("Failed to export interview session:", err);
+    return null;
+  }
 };

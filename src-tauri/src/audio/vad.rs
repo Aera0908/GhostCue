@@ -5,7 +5,7 @@ use log::info;
 pub const VAD_FRAME_SIZE: usize = 512; // 32ms at 16kHz
 pub const SAMPLE_RATE: usize = 16000;
 const PRE_SPEECH_FRAMES: usize = 10; // ~320ms pre-roll buffer to preserve starting consonants
-const MAX_SEGMENT_DURATION_SECS: u64 = 7; // Split long continuous monologues into natural 7s sentences
+const MAX_SEGMENT_DURATION_SECS: u64 = 30; // Allow complete sentences and full interview questions up to 30s
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VadState {
@@ -26,7 +26,7 @@ pub struct VadDetector {
     pub is_interviewer: bool,
     pub threshold: f32, // 0.0 to 1.0 (default ~0.5)
     pub min_speech_duration: Duration, // e.g. 180ms
-    pub silence_cutoff_duration: Duration, // e.g. 600ms
+    pub silence_cutoff_duration: Duration, // e.g. 1600ms
 
     state: VadState,
     speech_start_instant: Option<Instant>,
@@ -48,15 +48,22 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn new(is_interviewer: bool, threshold: f32, _min_speech_ms: u64, silence_cutoff_ms: u64) -> Self {
+        // Natural speech pauses in interviews range 1.0 - 1.8s. Avoid cutting off mid-sentence.
+        let effective_cutoff_ms = if is_interviewer {
+            silence_cutoff_ms.max(1600).clamp(500, 3500)
+        } else {
+            silence_cutoff_ms.max(1000).clamp(400, 3000)
+        };
+
         Self {
             is_interviewer,
             threshold: threshold.clamp(0.1, 0.9),
             min_speech_duration: Duration::from_millis(100), // Quick ~100ms voice onset
-            silence_cutoff_duration: Duration::from_millis(silence_cutoff_ms.clamp(300, 1200)),
+            silence_cutoff_duration: Duration::from_millis(effective_cutoff_ms),
             state: VadState::Silence,
             speech_start_instant: None,
             silence_start_instant: None,
-            accumulated_samples: Vec::with_capacity(SAMPLE_RATE * 8),
+            accumulated_samples: Vec::with_capacity(SAMPLE_RATE * 32),
             pre_speech_ring: VecDeque::with_capacity(PRE_SPEECH_FRAMES + 2),
             consecutive_silence_frames: 0,
             consecutive_speech_frames: 0,

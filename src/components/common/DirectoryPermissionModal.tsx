@@ -6,12 +6,14 @@ interface DirectoryPermissionModalProps {
   isOpen: boolean;
   onGrant: () => void;
   onDismiss: () => void;
+  isGranting?: boolean;
 }
 
 export const DirectoryPermissionModal: React.FC<DirectoryPermissionModalProps> = ({
   isOpen,
   onGrant,
   onDismiss,
+  isGranting = false,
 }) => {
   const { t } = useTranslation();
 
@@ -40,7 +42,8 @@ export const DirectoryPermissionModal: React.FC<DirectoryPermissionModalProps> =
           <button
             type="button"
             onClick={onDismiss}
-            className="p-1 hover:bg-[#252525] text-[#888888] hover:text-white transition-colors"
+            disabled={isGranting}
+            className="p-1 hover:bg-[#252525] text-[#888888] hover:text-white transition-colors disabled:opacity-40"
             title={t.common.close}
           >
             <X className="w-4 h-4" />
@@ -91,18 +94,29 @@ export const DirectoryPermissionModal: React.FC<DirectoryPermissionModalProps> =
           <button
             type="button"
             onClick={onDismiss}
-            className="px-3.5 py-2 bg-[#1e1e1e] hover:bg-[#282828] text-white text-xs font-semibold transition-colors"
+            disabled={isGranting}
+            className="px-3.5 py-2 bg-[#1e1e1e] hover:bg-[#282828] text-white text-xs font-semibold transition-colors disabled:opacity-40"
           >
             {t.permissionModal.skipBtn}
           </button>
           <button
             type="button"
             onClick={onGrant}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-bold transition-colors shadow-lg active:scale-[0.99]"
+            disabled={isGranting}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#1d4ed8] hover:bg-[#2563eb] disabled:opacity-50 text-white text-xs font-bold transition-colors shadow-lg active:scale-[0.99]"
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>{t.permissionModal.allowBtn}</span>
-            <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+            {isGranting ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Selecting & Scanning Folder...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{t.permissionModal.allowBtn}</span>
+                <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+              </>
+            )}
           </button>
         </div>
       </div>

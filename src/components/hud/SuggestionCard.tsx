@@ -60,6 +60,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showLogList, setShowLogList] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   const selectedLog = selectedLogId ? aiLogs.find((l) => l.id === selectedLogId) : null;
   const isViewingHistory = Boolean(selectedLog && !isStreaming);
@@ -90,6 +91,16 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = async () => {
+    if (!onExportTxt || isExporting) return;
+    setIsExporting(true);
+    try {
+      await onExportTxt();
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handlePrevLog = () => {
@@ -222,13 +233,14 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
           {onExportTxt && (
             <button
               type="button"
-              onClick={onExportTxt}
+              onClick={handleExport}
+              disabled={isExporting}
               aria-label="Export interview transcript and answers"
-              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 text-xs font-semibold rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
+              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 disabled:opacity-50 text-xs font-semibold rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
               title="Export complete session to .txt"
             >
-              <FileDown className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export</span>
+              <FileDown className={`w-3.5 h-3.5 ${isExporting ? "animate-pulse text-amber-400" : ""}`} />
+              <span className="hidden sm:inline">{isExporting ? "Saving..." : "Export"}</span>
             </button>
           )}
 

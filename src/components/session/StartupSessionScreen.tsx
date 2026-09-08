@@ -15,9 +15,12 @@ import {
   X,
   Minus,
   FolderGit2,
-  Search,
   Download,
   FolderOpen,
+  RefreshCw,
+  FolderPlus,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { InterviewSession } from "../../types/session";
@@ -81,10 +84,27 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
   const [company, setCompany] = useState(() => localStorage.getItem("ghostcue_draft_company") || "");
   const [jobDescription, setJobDescription] = useState(() => localStorage.getItem("ghostcue_draft_job_desc") || config.job_description || "");
   const [candidateResume, setCandidateResume] = useState(() => localStorage.getItem("ghostcue_resume_text") || config.candidate_resume || "");
-  const [projectDirectory, setProjectDirectory] = useState(() => localStorage.getItem("ghostcue_draft_project_dir") || config.project_directory || "");
+  const [projectDirectories, setProjectDirectories] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("ghostcue_draft_project_dirs");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    if (config.project_directories && config.project_directories.length > 0) {
+      return config.project_directories;
+    }
+    if (config.project_directory && config.project_directory.trim().length > 0) {
+      return [config.project_directory.trim()];
+    }
+    return [];
+  });
+  const [manualFolderInput, setManualFolderInput] = useState("");
   const [projectContext, setProjectContext] = useState(() => localStorage.getItem("ghostcue_draft_project_ctx") || config.project_context || "");
   const [isScanningDir, setIsScanningDir] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [showContextPreview, setShowContextPreview] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -104,8 +124,10 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
     if (config.company_name && !localStorage.getItem("ghostcue_draft_company")) {
       setCompany(config.company_name);
     }
-    if (config.project_directory && !localStorage.getItem("ghostcue_draft_project_dir")) {
-      setProjectDirectory(config.project_directory);
+    if (config.project_directories && config.project_directories.length > 0 && !localStorage.getItem("ghostcue_draft_project_dirs")) {
+      setProjectDirectories(config.project_directories);
+    } else if (config.project_directory && !localStorage.getItem("ghostcue_draft_project_dirs")) {
+      setProjectDirectories([config.project_directory]);
     }
     if (config.project_context && !localStorage.getItem("ghostcue_draft_project_ctx")) {
       setProjectContext(config.project_context);
@@ -137,9 +159,16 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
     localStorage.setItem("ghostcue_resume_text", val);
   };
 
-  const handleProjectDirectoryChange = (val: string) => {
-    setProjectDirectory(val);
-    localStorage.setItem("ghostcue_draft_project_dir", val);
+  const updateProjectDirectories = (dirs: string[]) => {
+    setProjectDirectories(dirs);
+    try {
+      localStorage.setItem("ghostcue_draft_project_dirs", JSON.stringify(dirs));
+    } catch {}
+    if (dirs.length > 0) {
+      localStorage.setItem("ghostcue_draft_project_dir", dirs[0]);
+    } else {
+      localStorage.removeItem("ghostcue_draft_project_dir");
+    }
   };
 
   const handleProjectContextChange = (val: string) => {
@@ -147,39 +176,72 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
     localStorage.setItem("ghostcue_draft_project_ctx", val);
   };
 
-  const handleScanProjectDirectory = async (dirPath?: string) => {
-    const targetDir = dirPath || projectDirectory.trim();
-    if (!targetDir) {
-      alert("Please specify a project directory path first.");
+  const handleScanAllFolders = async (dirsToScan?: string[]) => {
+    const targetDirs = dirsToScan || projectDirectories;
+    if (targetDirs.length === 0) {
+      handleProjectContextChange("");
+      setScanStatus("No project folders connected.");
       return;
     }
 
     setIsScanningDir(true);
-    setScanStatus("Scanning codebase structure and markdown files...");
+    setScanStatus(`Scanning ${targetDirs.length} project repository codebase${targetDirs.length > 1 ? "s" : ""}...`);
 
     try {
-      const summary = await TauriApi.scanProjectDirectory(targetDir);
+      const summary = await TauriApi.scanMultipleProjectDirectories(targetDirs);
       if (summary && summary.trim().length > 10) {
         handleProjectContextChange(summary.trim());
-        setScanStatus(`Indexed ${summary.length.toLocaleString()} characters of codebase architecture.`);
+        setScanStatus(`Indexed ${targetDirs.length} project${targetDirs.length > 1 ? "s" : ""} (${summary.length.toLocaleString()} characters of architecture & manifests).`);
       } else {
-        setScanStatus("Scan returned empty. Ensure path exists.");
+        setScanStatus("Scan returned empty. Ensure selected directories exist.");
       }
     } catch (err: any) {
-      console.error("Project directory scan failed:", err);
+      console.error("Multi-project scan failed:", err);
       setScanStatus(`Scan failed: ${err.message || err}`);
     } finally {
       setIsScanningDir(false);
     }
   };
 
+  const handleAddProjectDirectory = async (rawPath: string) => {
+    const cleanPath = rawPath.trim();
+    if (!cleanPath) return;
+
+    if (projectDirectories.includes(cleanPath)) {
+      alert("This project folder is already added.");
+      return;
+    }
+
+    const updated = [...projectDirectories, cleanPath];
+    updateProjectDirectories(updated);
+    setManualFolderInput("");
+    await handleScanAllFolders(updated);
+  };
+
+  const handleRemoveProjectDirectory = async (pathToRemove: string) => {
+    const updated = projectDirectories.filter((p) => p !== pathToRemove);
+    updateProjectDirectories(updated);
+    if (updated.length > 0) {
+      await handleScanAllFolders(updated);
+    } else {
+      handleProjectContextChange("");
+      setScanStatus("Removed project folder. 0 folders connected.");
+    }
+  };
+
   const handleSelectFolderDialog = async () => {
     try {
-      if (folderInputRef.current) {
+      const chosen = await TauriApi.selectDirectoryDialog();
+      if (chosen && chosen.trim().length > 0) {
+        await handleAddProjectDirectory(chosen.trim());
+      } else if (folderInputRef.current) {
         folderInputRef.current.click();
       }
     } catch (err) {
       console.error("Folder select error:", err);
+      if (folderInputRef.current) {
+        folderInputRef.current.click();
+      }
     }
   };
 
@@ -199,7 +261,6 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
           folderPath = parts[0];
         }
       }
-      handleProjectDirectoryChange(folderPath);
 
       let summary = `### Project Folder: ${folderPath}\n\n#### 1. Uploaded File Tree:\n\`\`\`\n`;
       const fileNames = Array.from(files).map((f) => (f as any).webkitRelativePath || f.name);
@@ -223,8 +284,10 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
         }
       }
 
-      handleProjectContextChange(summary);
-      setScanStatus(`Indexed ${summary.length.toLocaleString()} characters from ${files.length} files.`);
+      const nextDirs = projectDirectories.includes(folderPath) ? projectDirectories : [...projectDirectories, folderPath];
+      updateProjectDirectories(nextDirs);
+      handleProjectContextChange((projectContext ? projectContext + "\n\n" : "") + summary);
+      setScanStatus(`Indexed ${folderPath} (${summary.length.toLocaleString()} characters from ${files.length} files).`);
     } catch (err) {
       console.error("HTML folder upload failed:", err);
     } finally {
@@ -274,7 +337,8 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
       company: company.trim() || undefined,
       jobDescription: jobDescription.trim(),
       candidateResume: candidateResume.trim(),
-      projectDirectory: projectDirectory.trim() || undefined,
+      projectDirectory: projectDirectories[0] || undefined,
+      projectDirectories: projectDirectories,
       projectContext: projectContext.trim() || undefined,
     });
     onStartLiveHud();
@@ -407,9 +471,9 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            exportSessionAsTxt(sess, config);
+                            await exportSessionAsTxt(sess, config);
                           }}
                           className="opacity-0 group-hover:opacity-100 p-1 hover:text-sky-400 text-slate-400 transition-opacity"
                           title="Export interview session to .txt"
@@ -591,19 +655,85 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                 />
               </div>
 
-              {/* Project Directory Context */}
-              <div className="space-y-2 pt-2 border-t border-slate-800/80">
+              {/* Connected Project & Codebase Repositories (Multi-Project Support) */}
+              <div className="space-y-3 pt-3 border-t border-slate-800/80">
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-slate-200 font-semibold">
-                    <FolderGit2 className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Project & Repository Context (Optional)</span>
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    Deep codebase Q&A support
+                  <div className="flex items-center gap-2">
+                    <FolderGit2 className="w-4 h-4 text-amber-400" />
+                    <label className="text-slate-100 font-bold text-xs uppercase tracking-wider">
+                      Connected Projects & Repositories
+                    </label>
+                  </div>
+                  <span className="text-[11px] text-amber-400 font-mono font-semibold">
+                    {projectDirectories.length} Connected
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Connect one or more codebase repositories. GhostCue scans the directory trees, package manifests, and architecture documentation so AI can answer deep questions about your actual code during interviews.
+                </p>
+
+                {/* List of Connected Project Folders */}
+                {projectDirectories.length > 0 ? (
+                  <div className="space-y-2">
+                    {projectDirectories.map((dirPath, idx) => {
+                      const dirName = dirPath.split(/[/\\]/).filter(Boolean).pop() || dirPath;
+                      return (
+                        <div
+                          key={dirPath}
+                          className="flex items-center justify-between p-2.5 bg-slate-900 border border-slate-800 rounded-xl hover:border-slate-700 transition-all gap-2"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className="p-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg shrink-0">
+                              <FolderOpen className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-100 truncate">
+                                  #{idx + 1}: {dirName}
+                                </span>
+                                <span className="text-[10px] text-emerald-400 bg-emerald-950/70 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono shrink-0">
+                                  ✓ Indexed
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono truncate block" title={dirPath}>
+                                {dirPath}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleScanAllFolders([dirPath])}
+                              disabled={isScanningDir}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-slate-700 focus-visible:ring-1 focus-visible:ring-sky-400"
+                              title="Re-scan and index this project"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin text-sky-400" : ""}`} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveProjectDirectory(dirPath)}
+                              className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors border border-slate-700 focus-visible:ring-1 focus-visible:ring-rose-400"
+                              title="Disconnect this project"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-900/50 border border-dashed border-slate-800 rounded-xl text-center space-y-2">
+                    <p className="text-xs text-slate-400">No project repositories connected to this interview session yet.</p>
+                  </div>
+                )}
+
+                {/* Add Folder Actions */}
+                <div className="flex flex-col sm:flex-row items-center gap-2">
                   <input
                     type="file"
                     ref={folderInputRef}
@@ -614,51 +744,88 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                     multiple
                     className="hidden"
                   />
+                  
                   <button
                     type="button"
                     onClick={handleSelectFolderDialog}
                     disabled={isScanningDir}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-bold rounded-lg transition-colors shadow-sm shrink-0 focus-visible:ring-2 focus-visible:ring-sky-400"
-                    title="Select folder"
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-lg border border-slate-700 transition-colors shadow-sm shrink-0 focus-visible:ring-2 focus-visible:ring-sky-400"
                   >
-                    <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{isScanningDir ? "Scanning..." : "Select Folder"}</span>
+                    <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
+                    <span>+ Add Project Folder</span>
                   </button>
 
-                  <input
-                    type="text"
-                    value={projectDirectory}
-                    onChange={(e) => handleProjectDirectoryChange(e.target.value)}
-                    placeholder="Or enter local path (e.g. g:/Project/my-app)..."
-                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
-                  />
+                  <div className="flex items-center gap-1.5 w-full flex-1">
+                    <input
+                      type="text"
+                      value={manualFolderInput}
+                      onChange={(e) => setManualFolderInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && manualFolderInput.trim()) {
+                          e.preventDefault();
+                          handleAddProjectDirectory(manualFolderInput);
+                        }
+                      }}
+                      placeholder="Or enter path (e.g. g:/Project/my-repo)..."
+                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
+                    />
 
-                  <button
-                    type="button"
-                    onClick={() => handleScanProjectDirectory()}
-                    disabled={isScanningDir || !projectDirectory.trim()}
-                    className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-colors shrink-0"
-                    title="Scan directory"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    <span>{t.common.search}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddProjectDirectory(manualFolderInput)}
+                      disabled={isScanningDir || !manualFolderInput.trim()}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold rounded-lg transition-colors shrink-0"
+                    >
+                      <span>Add</span>
+                    </button>
+                  </div>
+
+                  {projectDirectories.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleScanAllFolders()}
+                      disabled={isScanningDir}
+                      className="w-full sm:w-auto flex items-center justify-center gap-1 px-3 py-2 bg-sky-950/60 border border-sky-500/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold rounded-lg transition-colors shrink-0"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin" : ""}`} />
+                      <span>Re-scan All ({projectDirectories.length})</span>
+                    </button>
+                  )}
                 </div>
 
+                {/* Live Scan Status Banner */}
                 {scanStatus && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 text-xs rounded-lg">
-                    <FileCheck className="w-4 h-4 text-emerald-400" />
-                    <span>{scanStatus}</span>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-emerald-950/50 border border-emerald-600/30 text-emerald-300 text-xs rounded-lg">
+                    <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="leading-snug">{scanStatus}</span>
                   </div>
                 )}
 
-                <textarea
-                  rows={4}
-                  value={projectContext}
-                  onChange={(e) => handleProjectContextChange(e.target.value)}
-                  placeholder="Scanned codebase structure, README summaries, or architecture notes..."
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs leading-relaxed font-mono"
-                />
+                {/* Collapsible Combined Context Preview */}
+                {projectContext && projectContext.trim().length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowContextPreview((prev) => !prev)}
+                      className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 font-medium transition-colors"
+                    >
+                      {showContextPreview ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      <span>
+                        {showContextPreview ? "Hide" : "View / Edit"} Combined Project Context ({projectContext.length.toLocaleString()} characters)
+                      </span>
+                    </button>
+
+                    {showContextPreview && (
+                      <textarea
+                        rows={5}
+                        value={projectContext}
+                        onChange={(e) => handleProjectContextChange(e.target.value)}
+                        placeholder="Combined codebase architecture summary..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs leading-relaxed font-mono"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

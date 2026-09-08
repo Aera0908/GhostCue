@@ -7,9 +7,10 @@ import { TauriApi } from "../../services/tauriApi";
 interface AudioSettingsProps {
   config: AppConfig;
   onChange: (key: keyof AppConfig, value: any) => void;
+  inLiveHud?: boolean;
 }
 
-export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }) => {
+export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, inLiveHud = false }) => {
   const [inputDevices, setInputDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<AudioDeviceInfo[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
@@ -68,8 +69,11 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
       if (unlistenMic) unlistenMic();
       if (unlistenLoopback) unlistenLoopback();
       clearInterval(pollInterval);
+      if (!inLiveHud) {
+        TauriApi.stopAudioCapture().catch(console.warn);
+      }
     };
-  }, []);
+  }, [inLiveHud]);
 
   const handlePlayTestSound = () => {
     try {
@@ -364,7 +368,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange }
           <input
             type="range"
             min="400"
-            max="2000"
+            max="3000"
             step="100"
             value={config.vad_silence_cutoff_ms}
             onChange={(e) => handleDeviceChange("vad_silence_cutoff_ms", parseInt(e.target.value))}

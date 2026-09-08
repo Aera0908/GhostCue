@@ -17,9 +17,10 @@ export interface AppConfig {
   vad_silence_cutoff_ms: number;
 
   // Language & Localization
-  ui_language?: string; // "en" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru"
-  stt_language?: string; // "auto" | "en" | "zh" | "es" | "ja" | "de" | "fr" | "pt" | "ko" | "ru" | "hi" | "ar"
-  response_language?: string; // "auto" | "en" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru" | "hi" | "ar"
+  ui_language?: string; // "en" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru" | "tl-PH"
+  stt_language?: string; // "auto" | "en" | "tl" | "zh" | "es" | "ja" | "de" | "fr" | "pt" | "ko" | "ru" | "hi" | "ar"
+  stt_languages?: string[]; // e.g. ["en", "tl"] for restricted multi-language detection
+  response_language?: string; // "auto" | "en" | "tl-PH" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru" | "hi" | "ar"
 
   // STT Engine
   stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "mock" | string;
@@ -28,7 +29,9 @@ export interface AppConfig {
   deepgram_api_key: string;
 
   // LLM Provider
-  llm_provider: "ollama" | "openai" | "anthropic" | "groq" | "custom";
+  llm_provider: "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "custom";
+  gemini_api_key: string;
+  gemini_model: string;
   ollama_endpoint: string;
   ollama_model: string;
   openai_api_key: string;
@@ -47,6 +50,7 @@ export interface AppConfig {
   job_description: string;
   candidate_resume: string;
   project_directory?: string;
+  project_directories?: string[];
   project_context?: string;
   system_prompt_override: string;
   auto_trigger_enabled: boolean;

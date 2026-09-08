@@ -10,6 +10,8 @@ import {
   Columns2,
   Minimize,
   Maximize,
+  Pause,
+  Play,
 } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AppConfig } from "../../types/config";
@@ -17,7 +19,6 @@ import { TauriApi } from "../../services/tauriApi";
 import { useTranslation } from "../../i18n";
 
 export type HudLayoutMode = "split" | "ask" | "listen";
-export type FontScale = "sm" | "md" | "lg" | "xl";
 
 interface HudHeaderProps {
   config: AppConfig;
@@ -31,12 +32,12 @@ interface HudHeaderProps {
   onOpenSessions: () => void;
   layoutMode: HudLayoutMode;
   onChangeLayoutMode: (mode: HudLayoutMode) => void;
-  fontScale: FontScale;
-  onChangeFontScale: (scale: FontScale) => void;
   isCompactPill: boolean;
   onToggleCompactPill: () => void;
   activeProvider?: string;
   sessionTitle?: string;
+  isPaused?: boolean;
+  onTogglePause?: () => void;
 }
 
 export const HudHeader: React.FC<HudHeaderProps> = ({
@@ -48,12 +49,12 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
   onOpenSessions,
   layoutMode,
   onChangeLayoutMode,
-  fontScale,
-  onChangeFontScale,
   isCompactPill,
   onToggleCompactPill,
   activeProvider,
   sessionTitle,
+  isPaused = false,
+  onTogglePause,
 }) => {
   const { t } = useTranslation();
 
@@ -68,12 +69,6 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
     } catch {
       // Fallback
     }
-  };
-
-  const cycleFontScale = () => {
-    const scales: FontScale[] = ["sm", "md", "lg", "xl"];
-    const nextIdx = (scales.indexOf(fontScale) + 1) % scales.length;
-    onChangeFontScale(scales[nextIdx]);
   };
 
   return (
@@ -190,6 +185,32 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
           </span>
         )}
 
+        {/* Pause / Resume Button */}
+        {onTogglePause && (
+          <button
+            type="button"
+            onClick={onTogglePause}
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all focus-visible:ring-2 focus-visible:ring-amber-400 ${
+              isPaused
+                ? "bg-amber-500/20 border-amber-400/80 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700"
+            }`}
+            title={isPaused ? "Resume Live Listening & Answering (Ctrl+Shift+P)" : "Pause Live Listening & Answering (Ctrl+Shift+P)"}
+          >
+            {isPaused ? (
+              <>
+                <Play className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                <span className="font-bold text-amber-300">Paused</span>
+              </>
+            ) : (
+              <>
+                <Pause className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden sm:inline">Pause</span>
+              </>
+            )}
+          </button>
+        )}
+
         {/* Auto-Answer Toggle */}
         <button
           type="button"
@@ -203,17 +224,6 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
         >
           <Sparkles className={`w-3.5 h-3.5 ${config.auto_trigger_enabled ? "text-sky-400" : "text-slate-400"}`} />
           <span className="hidden sm:inline">Auto: {config.auto_trigger_enabled ? t.common.on : t.common.off}</span>
-        </button>
-
-        {/* Text Size (Font scale) */}
-        <button
-          type="button"
-          onClick={cycleFontScale}
-          aria-label={`Change text size. Currently ${fontScale.toUpperCase()}`}
-          className="flex items-center justify-center px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
-          title={`Text Size: ${fontScale.toUpperCase()} (Click to cycle)`}
-        >
-          A<span className="text-[10px]">{fontScale === "xl" ? "++" : fontScale === "lg" ? "+" : ""}</span>
         </button>
 
         {/* Settings */}

@@ -22,15 +22,18 @@ export const DEFAULT_CONFIG: AppConfig = {
   loopback_enabled: true,
   vad_sensitivity: 0.5,
   vad_speech_threshold_ms: 300,
-  vad_silence_cutoff_ms: 800,
+  vad_silence_cutoff_ms: 1600,
   ui_language: "en",
   stt_language: "auto",
+  stt_languages: ["en", "tl"],
   response_language: "auto",
   stt_provider: "cloud_whisper",
   whisper_model_path: "",
   whisper_model_size: "base.en",
   deepgram_api_key: "",
-  llm_provider: "ollama",
+  llm_provider: "gemini",
+  gemini_api_key: "",
+  gemini_model: "gemini-2.5-flash",
   ollama_endpoint: "http://localhost:11434",
   ollama_model: "llama3.2",
   openai_api_key: "",
@@ -44,6 +47,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   target_role: "Staff Software Engineer",
   job_description: "Distributed systems, Rust, TypeScript, high-throughput pipelines, and system design.",
   candidate_resume: "Principal/Staff software engineer with deep expertise in low-latency backend systems, event-driven architectures, and modern web applications.",
+  project_directories: [],
   system_prompt_override: "",
   auto_trigger_enabled: true,
   max_context_turns: 10,
@@ -172,11 +176,19 @@ export const TauriApi = {
   },
 
   // LLM Orchestration
-  async generateAiSuggestion(action: string = "hint", customQuery?: string): Promise<string> {
+  async generateAiSuggestion(
+    action: string = "hint",
+    customQuery?: string,
+    pastAnswers?: Array<{ action: string; query: string; answer: string }>
+  ): Promise<string> {
     if (!isTauri()) {
       return "Mock AI response: Consider breaking down the architecture into high-throughput message streams with idempotent consumer workers.";
     }
-    return await invoke<string>("generate_ai_suggestion", { action, customQuery });
+    return await invoke<string>("generate_ai_suggestion", {
+      action,
+      customQuery,
+      pastAnswers,
+    });
   },
 
   async cancelAiSuggestion(): Promise<void> {
@@ -197,6 +209,34 @@ export const TauriApi = {
       return `### Mock Scanned Directory Context for: ${directoryPath}\n- Found package.json & README.md\n- Tech: React, TypeScript, Rust, SQLite\n- Architecture: Event-driven micro-HUD with zero-overhead audio streaming.`;
     }
     return await invoke<string>("scan_project_directory", { directoryPath });
+  },
+
+  async scanMultipleProjectDirectories(directoryPaths: string[]): Promise<string> {
+    if (!isTauri()) {
+      return directoryPaths
+        .map((p, i) => `### Mock Scanned Project #${i + 1}: ${p}\n- Architecture and codebase context captured.`)
+        .join("\n\n");
+    }
+    return await invoke<string>("scan_multiple_project_directories", { directoryPaths });
+  },
+
+  async saveTextFile(defaultFilename: string, content: string): Promise<string | null> {
+    if (!isTauri()) {
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = defaultFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return defaultFilename;
+    }
+    return await invoke<string | null>("save_text_file", {
+      defaultFilename,
+      content,
+    });
   },
 
   // Event Listeners

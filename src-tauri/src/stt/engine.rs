@@ -56,7 +56,7 @@ impl SttEngineManager {
         receiver: Receiver<VadSegment>,
         history: Arc<RwLock<Vec<TranscriptSegment>>>,
         get_config_fn: impl Fn() -> AppConfig + Send + Sync + 'static,
-        trigger_llm_fn: impl Fn(String) + Send + Sync + 'static,
+        _trigger_llm_fn: impl Fn(String) + Send + Sync + 'static,
     ) {
         info!("STT background worker loop started.");
 
@@ -119,40 +119,62 @@ impl SttEngineManager {
 
                     info!("✓ STT Transcribed for {}: '{}' ({:.2}s)", speaker, cleaned_text, duration_secs);
 
-                    let segment_id = uuid::Uuid::new_v4().to_string();
-                    let timestamp = Utc::now().format("%H:%M:%S").to_string();
-
-                    let transcript_segment = TranscriptSegment {
-                        id: segment_id.clone(),
-                        speaker: speaker.to_string(),
-                        text: cleaned_text.clone(),
-                        timestamp,
-                        is_final: true,
-                        confidence: 0.95,
-                        duration_secs,
+                    let mut hist = history.write();
+                    let should_merge = if let Some(last) = hist.last() {
+                        if last.speaker == speaker {
+                            let prev_text = last.text.trim();
+                            let ends_with_terminal = (prev_text.ends_with('.') && !prev_text.ends_with("..."))
+                                || prev_text.ends_with('?')
+                                || prev_text.ends_with('!');
+                            let continues_thought = prev_text.ends_with(',') || prev_text.ends_with("...") || prev_text.ends_with('-');
+                            
+                            // Merge consecutive speech from the same speaker to prevent sentence fragmentation
+                            !ends_with_terminal || continues_thought || (segment.speaker_is_interviewer && duration_secs < 14.0)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
                     };
 
-                    // Append to shared rolling history
-                    {
-                        let mut hist = history.write();
-                        hist.push(transcript_segment.clone());
+                    let transcript_segment = if should_merge && !hist.is_empty() {
+                        let last_idx = hist.len() - 1;
+                        let last = &mut hist[last_idx];
+                        let mut merged_text = last.text.trim().to_string();
+                        if merged_text.ends_with("...") {
+                            merged_text.truncate(merged_text.len() - 3);
+                        } else if merged_text.ends_with('-') || merged_text.ends_with(',') {
+                            merged_text.truncate(merged_text.len() - 1);
+                        }
+                        merged_text = format!("{} {}", merged_text.trim(), cleaned_text);
+                        last.text = merged_text;
+                        last.duration_secs += duration_secs;
+                        last.timestamp = Utc::now().format("%H:%M:%S").to_string();
+                        info!("✓ Merged continuous sentence for {}: '{}'", speaker, last.text);
+                        last.clone()
+                    } else {
+                        let segment_id = uuid::Uuid::new_v4().to_string();
+                        let timestamp = Utc::now().format("%H:%M:%S").to_string();
+                        let new_seg = TranscriptSegment {
+                            id: segment_id,
+                            speaker: speaker.to_string(),
+                            text: cleaned_text.clone(),
+                            timestamp,
+                            is_final: true,
+                            confidence: 0.95,
+                            duration_secs,
+                        };
+                        hist.push(new_seg.clone());
                         if hist.len() > 50 {
                             hist.remove(0);
                         }
-                    }
+                        new_seg
+                    };
+                    drop(hist);
 
                     // Emit transcript-event to frontend
                     let _ = app_handle.emit_to("main", "transcript-event", &transcript_segment);
                     let _ = app_handle.emit("transcript-event", &transcript_segment);
-
-                    // Auto-trigger LLM exclusively on interviewer turns (never triggers on Candidate / You)
-                    if config.auto_trigger_enabled && segment.speaker_is_interviewer {
-                        let word_count = cleaned_text.split_whitespace().count();
-                        if word_count >= 2 {
-                            info!("Auto-triggering AI answer for interviewer statement: '{}'", cleaned_text);
-                            trigger_llm_fn(cleaned_text);
-                        }
-                    }
                 }
                 Err(err) => {
                     warn!("STT transcription error for {}: {}", speaker, err);

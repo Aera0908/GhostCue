@@ -36,6 +36,29 @@ pub async fn select_directory_dialog() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+pub async fn save_text_file(default_filename: String, content: String) -> Result<Option<String>, String> {
+    info!("Opening native file save dialog for '{}'...", default_filename);
+    let file = rfd::AsyncFileDialog::new()
+        .set_title("Export Interview Session")
+        .set_file_name(&default_filename)
+        .add_filter("Text Document (*.txt)", &["txt"])
+        .add_filter("All Files (*.*)", &["*"])
+        .save_file()
+        .await;
+
+    if let Some(file_handle) = file {
+        let path = file_handle.path().to_path_buf();
+        std::fs::write(&path, content.as_bytes())
+            .map_err(|e| format!("Failed to save file: {}", e))?;
+        info!("Successfully exported session to: {:?}", path);
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        info!("User cancelled export save dialog.");
+        Ok(None)
+    }
+}
+
+#[tauri::command]
 pub async fn scan_project_directory(directory_path: String) -> Result<String, String> {
     let clean_path = directory_path.trim();
     if clean_path.is_empty() {
@@ -93,6 +116,51 @@ pub async fn scan_project_directory(directory_path: String) -> Result<String, St
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn scan_multiple_project_directories(directory_paths: Vec<String>) -> Result<String, String> {
+    let valid_paths: Vec<String> = directory_paths
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    if valid_paths.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut combined = String::new();
+    let total_count = valid_paths.len();
+
+    for (idx, path) in valid_paths.iter().enumerate() {
+        match scan_project_directory(path.clone()).await {
+            Ok(summary) => {
+                combined.push_str(&format!(
+                    "================================================================================\n\
+                     PROJECT #{} OF {}: {}\n\
+                     ================================================================================\n\n{}\n\n",
+                    idx + 1,
+                    total_count,
+                    path,
+                    summary.trim()
+                ));
+            }
+            Err(err) => {
+                combined.push_str(&format!(
+                    "================================================================================\n\
+                     PROJECT #{} OF {}: {} (Scan Warning: {})\n\
+                     ================================================================================\n\n",
+                    idx + 1,
+                    total_count,
+                    path,
+                    err
+                ));
+            }
+        }
+    }
+
+    Ok(combined.trim().to_string())
 }
 
 fn collect_tree(root: &Path, current: &Path, depth: usize, max_depth: usize, lines: &mut Vec<String>) {

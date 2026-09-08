@@ -18,6 +18,7 @@ export interface InterviewSession {
   jobDescription?: string;
   candidateResume?: string;
   projectDirectory?: string;
+  projectDirectories?: string[];
   projectContext?: string;
   createdAt: string;
   lastActive: string;

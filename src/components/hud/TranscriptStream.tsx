@@ -16,24 +16,80 @@ interface TranscriptStreamProps {
 }
 
 export const isInterviewerQuestion = (text: string): boolean => {
-  const t = text.trim().toLowerCase();
-  return (
-    t.includes("?") ||
-    t.startsWith("how ") ||
-    t.startsWith("what ") ||
-    t.startsWith("why ") ||
-    t.startsWith("can you ") ||
-    t.startsWith("could you ") ||
-    t.startsWith("tell me ") ||
-    t.startsWith("explain ") ||
-    t.startsWith("describe ") ||
-    t.startsWith("walk me ") ||
-    t.startsWith("suppose ") ||
-    t.startsWith("give me ") ||
-    t.startsWith("write ") ||
-    t.startsWith("implement ") ||
-    t.startsWith("design ")
-  );
+  if (!text || text.trim().length < 3) return false;
+
+  let t = text.trim().toLowerCase();
+  // Strip common conversational fillers at the start of utterances (e.g. "So,", "Okay,", "Well,")
+  t = t.replace(/^(so|well|and|now|okay|ok|then|next|alright)\s*[,:\-]?\s*/i, "").trim();
+
+  const questionPrefixes = [
+    "how ",
+    "what ",
+    "why ",
+    "where ",
+    "when ",
+    "who ",
+    "which ",
+    "whose ",
+    "can you ",
+    "could you ",
+    "would you ",
+    "will you ",
+    "should you ",
+    "do you ",
+    "did you ",
+    "does ",
+    "have you ",
+    "has ",
+    "had you ",
+    "are you ",
+    "is there ",
+    "is it ",
+    "was there ",
+    "tell me ",
+    "tell us ",
+    "explain ",
+    "describe ",
+    "walk me ",
+    "walk us ",
+    "suppose ",
+    "give me ",
+    "give us ",
+    "write ",
+    "implement ",
+    "design ",
+    "create ",
+    "build ",
+    "solve ",
+    "find ",
+    "please explain",
+    "please tell",
+    "please describe",
+    "let's talk about",
+    "let's discuss",
+    "share an example",
+    "give an example",
+  ];
+
+  const checkPhrase = (phrase: string): boolean => {
+    const p = phrase.trim().toLowerCase().replace(/^(so|well|and|now|okay|ok|then|next|alright)\s*[,:\-]?\s*/i, "").trim();
+    if (p.includes("?")) return true;
+    return questionPrefixes.some((prefix) => p.startsWith(prefix));
+  };
+
+  if (checkPhrase(t)) return true;
+
+  // Check individual sentences if speech-to-text broke utterance into multiple sentences
+  const sentences = t.split(/[.!]\s+/);
+  if (sentences.length > 1) {
+    for (const sentence of sentences) {
+      if (checkPhrase(sentence)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 };
 
 export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
@@ -50,6 +106,7 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -68,6 +125,16 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleExport = async () => {
+    if (!onExportTxt || isExporting) return;
+    setIsExporting(true);
+    try {
+      await onExportTxt();
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const findMatchingLog = (turnText: string) => {
@@ -126,16 +193,17 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
             </button>
           )}
 
-          {onExportTxt && transcripts.length > 0 && (
+          {onExportTxt && (transcripts.length > 0 || aiLogs.length > 0) && (
             <button
               type="button"
-              onClick={onExportTxt}
-              aria-label="Export conversation transcripts to text file"
-              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 rounded-lg transition-colors text-xs font-medium"
-              title="Export transcripts to .txt"
+              onClick={handleExport}
+              disabled={isExporting}
+              aria-label="Export conversation transcripts and answers to text file"
+              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 disabled:opacity-50 rounded-lg transition-colors text-xs font-medium"
+              title="Export transcripts & answers to .txt"
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export</span>
+              <FileText className={`w-3.5 h-3.5 ${isExporting ? "animate-pulse text-amber-400" : ""}`} />
+              <span className="hidden sm:inline">{isExporting ? "Saving..." : "Export"}</span>
             </button>
           )}
 
@@ -173,15 +241,17 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
           transcripts.map((turn) => {
             const isInterviewer = turn.speaker === "Interviewer";
             const speakerLabel = isInterviewer ? t.transcript.speakerInterviewer : t.transcript.speakerCandidate;
-            const isQuestion = isInterviewer && isInterviewerQuestion(turn.text);
-            const matchedLog = isInterviewer ? findMatchingLog(turn.text) : null;
+            const isQuestion = isInterviewerQuestion(turn.text);
+            const matchedLog = findMatchingLog(turn.text);
 
             return (
               <div
                 key={turn.id}
                 className={`group relative flex flex-col p-3 rounded-xl border transition-all ${
                   isQuestion
-                    ? "bg-sky-950/40 border-sky-600/50 shadow-sm text-slate-100"
+                    ? isInterviewer
+                      ? "bg-sky-950/40 border-sky-600/50 shadow-sm text-slate-100"
+                      : "bg-emerald-950/30 border-emerald-600/40 shadow-sm text-slate-100"
                     : isInterviewer
                     ? "bg-slate-900 border-slate-700/80 text-slate-100"
                     : "bg-slate-950/70 border-slate-800 text-slate-100"
@@ -205,7 +275,11 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
 
                     {/* Question Detected Badge */}
                     {isQuestion && (
-                      <span className="px-2 py-0.5 bg-sky-950/80 border border-sky-500/60 text-sky-200 text-[10px] font-bold rounded-md flex items-center gap-1 uppercase tracking-wider">
+                      <span className={`px-2 py-0.5 border text-[10px] font-bold rounded-md flex items-center gap-1 uppercase tracking-wider ${
+                        isInterviewer
+                          ? "bg-sky-950/80 border-sky-500/60 text-sky-200"
+                          : "bg-emerald-950/80 border-emerald-500/60 text-emerald-200"
+                      }`}>
                         <HelpCircle className="w-3 h-3" />
                         <span>Question</span>
                       </span>
@@ -229,24 +303,22 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
                         type="button"
                         onClick={() => onSelectAiAnswer(matchedLog.id)}
                         className="flex items-center gap-1 px-2.5 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-300 text-xs font-semibold rounded-md transition-colors"
-                        title="View saved AI answer for this question"
+                        title="View saved AI answer for this statement/question"
                       >
                         <FileText className="w-3 h-3" />
                         <span>View</span>
                       </button>
                     )}
 
-                    {isInterviewer && (
-                      <button
-                        type="button"
-                        onClick={() => onAskAiAboutTurn(turn.text)}
-                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center gap-1 px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 text-xs font-semibold rounded-md transition-all"
-                        title="Generate suggested answer for this question"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>{matchedLog ? "Re-answer" : "Answer"}</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onAskAiAboutTurn(turn.text)}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center gap-1 px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-sky-300 text-xs font-semibold rounded-md transition-all shadow-sm"
+                      title={isInterviewer ? "Answer this interviewer question" : "Answer this statement/question with AI"}
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{matchedLog ? "Re-answer" : "Answer this"}</span>
+                    </button>
 
                     <button
                       type="button"

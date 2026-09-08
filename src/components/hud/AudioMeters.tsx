@@ -12,6 +12,7 @@ interface AudioMetersProps {
   loopbackMuted?: boolean;
   onToggleMicMute?: () => void;
   onToggleLoopbackMute?: () => void;
+  isPaused?: boolean;
 }
 
 export const AudioMeters: React.FC<AudioMetersProps> = ({
@@ -23,17 +24,25 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
   loopbackMuted = false,
   onToggleMicMute,
   onToggleLoopbackMute,
+  isPaused = false,
 }) => {
   const { t } = useTranslation();
-  const micPct = micMuted ? 0 : Math.min(100, Math.max(micActive ? 8 : 0, Math.round(micLevel * 100)));
-  const loopbackPct = loopbackMuted ? 0 : Math.min(100, Math.max(loopbackActive ? 8 : 0, Math.round(loopbackLevel * 100)));
+  const micPct = isPaused || micMuted ? 0 : Math.min(100, Math.max(micActive ? 8 : 0, Math.round(micLevel * 100)));
+  const loopbackPct = isPaused || loopbackMuted ? 0 : Math.min(100, Math.max(loopbackActive ? 8 : 0, Math.round(loopbackLevel * 100)));
 
   return (
     <div
       role="region"
       aria-label="Audio stream activity and levels"
-      className="flex items-center gap-4 px-3.5 py-1.5 bg-slate-900/90 border-b border-slate-800 text-xs select-none font-sans"
+      className={`flex items-center gap-4 px-3.5 py-1.5 border-b text-xs select-none font-sans transition-colors ${
+        isPaused ? "bg-amber-950/40 border-amber-900/50" : "bg-slate-900/90 border-slate-800"
+      }`}
     >
+      {isPaused && (
+        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded font-bold text-[10px] tracking-wider uppercase shrink-0">
+          Audio & AI Paused
+        </span>
+      )}
       {/* Interviewer Loopback Stream */}
       <div className="flex-1 flex items-center gap-2.5">
         <button

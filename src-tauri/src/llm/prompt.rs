@@ -19,6 +19,14 @@ pub enum ActionType {
     VisionScreen,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PastAnswerEntry {
+    pub action: String,
+    #[serde(default)]
+    pub query: String,
+    pub answer: String,
+}
+
 fn get_language_instruction(response_language: &str) -> String {
     let lang = response_language.trim().to_lowercase();
     match lang.as_str() {
@@ -56,6 +64,46 @@ impl PromptBuilder {
             .collect();
 
         turns.join("\n")
+    }
+
+    /// Format recent AI Q&A turns from this session to maintain answer consistency
+    pub fn format_past_answers(past_answers: &[PastAnswerEntry], max_answers: usize) -> String {
+        if past_answers.is_empty() {
+            return String::new();
+        }
+
+        let start_idx = past_answers.len().saturating_sub(max_answers);
+        let recent = &past_answers[start_idx..];
+        let mut sections = Vec::new();
+
+        for (i, entry) in recent.iter().enumerate() {
+            let mut sec = format!("--- Previous Answer #{} [Type: {}] ---\n", i + 1, entry.action.to_uppercase());
+            if !entry.query.trim().is_empty() {
+                sec.push_str(&format!("Question / Prompt: \"{}\"\n", entry.query.trim()));
+            }
+            let clean_ans = entry.answer.trim();
+            let truncated_ans = if clean_ans.chars().count() > 1200 {
+                let s: String = clean_ans.chars().take(1200).collect();
+                format!("{}... [truncated]", s)
+            } else {
+                clean_ans.to_string()
+            };
+            sec.push_str(&format!("Answer Given to Interviewer:\n{}\n", truncated_ans));
+            sections.push(sec);
+        }
+
+        format!(
+r#"=== PREVIOUS ANSWERS GIVEN IN THIS SESSION (FOR CONSISTENCY & CONTINUITY) ===
+The candidate has already answered the following questions earlier in this interview:
+
+{}
+CRITICAL CONTINUITY & CONSISTENCY RULES:
+1. Maintain strict technical and narrative consistency with the earlier answers above.
+2. If this is a follow-up question or related topic, build naturally upon the technical decisions, architecture patterns, algorithms, frameworks, and personal anecdotes established earlier.
+3. NEVER contradict or negate statements, technical stack choices, or system designs already stated in earlier answers.
+================================================================================"#,
+            sections.join("\n")
+        )
     }
 
     /// Build system prompt dynamically based on action mode and candidate context
@@ -163,9 +211,13 @@ Your goal is to provide a scannable, punchy bullet-point executive summary of ke
             format!(
 r#"
 
-=== CANDIDATE SPECIFIC PROJECT CONTEXT & REPOSITORY REPERTOIRE ===
-When the interviewer asks about the candidate's specific projects, behavioral questions about how projects were executed, technical stack, architecture choices, debugging stories, or codebase implementation details, reference and speak directly to this project background:
+=== CANDIDATE PROJECT & CODEBASE REPERTOIRE ===
+The candidate has background with the following project/codebase context:
 {}
+
+CRITICAL GUIDELINE ON PROJECT USAGE:
+- ONLY reference this specific project background when the question explicitly or contextually calls for personal project walkthroughs, behavioral examples, real-world execution stories, or when the interviewer asks "how have you implemented this in your projects?".
+- DO NOT force or shoehorn this project name or repo details into standard conceptual questions, theoretical definitions, algorithmic questions, or general system design topics.
 "#,
                 config.project_context.trim()
             )
@@ -173,7 +225,7 @@ When the interviewer asks about the candidate's specific projects, behavioral qu
 
         format!(
 r#"You are GhostCue, a real-time stealth AI interview copilot assisting a candidate during a live interview.
-Your goal is to supply direct, authentic, and highly persuasive answers that anchor deeply in the candidate's actual resume, background, and the specific company & role context.
+Your goal is to supply direct, authentic, and highly persuasive answers that anchor smartly in the candidate's actual resume, background, and the specific company & role context.
 
 === CANDIDATE PROFILE & INTERVIEW TARGET ===
 - Target Role: {role}
@@ -187,21 +239,29 @@ Your goal is to supply direct, authentic, and highly persuasive answers that anc
 {resume}{project_context_block}
 
 === CORE ANSWERING INSTRUCTIONS ===
-1. SPEAK IN THE FIRST PERSON ("I", "my team", "we"):
-   - Formulate every answer as if the candidate is speaking it directly right now to the interviewer.
-   - Weave in concrete details, metrics, technologies, and past projects from the candidate's background, resume, and project context.
-   - Align your architectural trade-offs, design principles, and culture fit with the specific company ({company}) and role ({role}).
+1. NATURAL CANDIDATE PERSONA:
+   - Speak in the first person ("I", "in my experience", "we") when discussing past work, engineering decisions, or opinions.
+   - Sound natural, composed, articulate, and senior.
 
-2. ADAPT TO QUESTION TYPE:
-   - Behavioral / Situational ("Tell me about a time...", "Describe a challenge"): Use STAR method (Situation, Task, Action, Result) drawing directly from the candidate's resume and real project experience.
-   - Project Deep Dives ("How does project X work?"): Reference the concrete file structures, modules, trade-offs, and design patterns from the project repository context.
-   - Technical / Conceptual: Give a punchy 1-sentence definition, followed by 2-3 key technical points, best practices, and edge cases.
-   - System Design: Provide high-level architecture, component breakdown, data flow, scaling bottlenecks, and reliability trade-offs relevant to the job requirements.
+2. INTELLIGENT CONTEXT ADAPTATION (BE SMART WITH PROJECT RELEVANCE):
+   - Conceptual / Technical Knowledge Checks ("What is X?", "Difference between A and B", "How does Y work?", "Explain Z"):
+     * Provide a clear, sharp 1-2 sentence core definition, followed by 2-3 key technical points, trade-offs, and best practices.
+     * DO NOT shoehorn or force the candidate's specific repository projects into general conceptual definitions. Keep it clean, accurate, and objective.
+   - Behavioral / Situational ("Tell me about a time...", "Describe a difficult bug/challenge"):
+     * Use the STAR framework (Situation, Task, Action, Result) drawing naturally from the candidate's resume and project background.
+   - Project Deep Dives ("Tell me about your project...", "How did you design the backend for X?"):
+     * Refer directly to the candidate's repository architecture, components, metrics, and technology stack.
+   - System Design & Architecture ("Design X", "How to scale Y"):
+     * Focus on requirements, high-level architecture, components, data flow, bottlenecks, and scaling trade-offs.
 
 3. SCANNABLE & CONVERSATIONAL:
    - Start immediately with the answer. Never include conversational filler ("Certainly!", "Sure thing!", "Here is an answer").
    - Use bold keywords and clean bullet points for rapid reading during live speech.
    - Keep answers crisp, punchy, and confident.
+
+4. ANSWER CONTINUITY & TECHNICAL CONSISTENCY:
+   - When previous questions and answers from this interview session are provided in the context, maintain strict consistency with them.
+   - Do not contradict previously stated architectural decisions, database choices, tech stack components, or algorithms. Build smoothly upon earlier explanations for follow-up questions.
 
 {lang_instruction}"#,
             role = role,
@@ -214,26 +274,33 @@ Your goal is to supply direct, authentic, and highly persuasive answers that anc
         )
     }
 
-    /// Build user prompt based on action type and dialogue context
+    /// Build user prompt based on action type, dialogue context, and past session answers
     pub fn build_user_prompt(
         history: &[TranscriptSegment],
         action: ActionType,
         custom_query: Option<&str>,
         max_turns: usize,
+        past_answers: Option<&[PastAnswerEntry]>,
     ) -> String {
         let history_str = Self::format_conversation_history(history, max_turns);
+        let past_answers_str = past_answers
+            .map(|pa| Self::format_past_answers(pa, 5))
+            .unwrap_or_default();
 
-        match action {
+        let base_prompt = match action {
             ActionType::InterviewAnswer => {
                 if let Some(query) = custom_query {
                     format!(
 r#"Recent Transcript History:
 {}
 
-Interviewer Question / Prompt:
+Selected Turn / Question / Prompt to Answer:
 "{}"
 
-Task: Formulate the most compelling, authentic first-person response for the candidate to speak to the interviewer. Include 2-3 key talking points tailored to their background."#,
+Task: Formulate the best live answer for the candidate to speak to the interviewer:
+- If this is a conceptual or technical question, explain the core concept directly and clearly with 2-3 key technical bullet points (do not force unrelated personal project references).
+- If this is a behavioral or experience question, draw naturally from their resume and project experience using the STAR method.
+- Make the answer concise, natural, and senior."#,
                         history_str, query
                     )
                 } else {
@@ -241,7 +308,10 @@ Task: Formulate the most compelling, authentic first-person response for the can
 r#"Recent Transcript History:
 {}
 
-Task: Analyze the most recent question or statement from the interviewer. Provide a direct, articulate first-person answer and key bullet points for the candidate to say."#,
+Task: Analyze the interviewer's latest question or topic and provide the most effective answer for the candidate to say right now:
+- Answer technical concepts directly and concisely without forcing project names.
+- Draw from project experience only when the question is behavioral or asks for real-world experience.
+- Provide crisp, scannable talking points."#,
                         history_str
                     )
                 }
@@ -380,6 +450,12 @@ Task: Analyze the problem or code. Provide:
                     problem_desc, history_str
                 )
             }
+        };
+
+        if past_answers_str.is_empty() {
+            base_prompt
+        } else {
+            format!("{}\n\n{}", past_answers_str, base_prompt)
         }
     }
 }

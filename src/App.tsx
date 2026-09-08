@@ -3,21 +3,20 @@ import { AppConfig } from "./types/config";
 import { TranscriptSegment } from "./types/transcript";
 import { InterviewSession, AiLogEntry } from "./types/session";
 import { DEFAULT_CONFIG, TauriApi } from "./services/tauriApi";
-import { HudHeader, HudLayoutMode, FontScale } from "./components/hud/HudHeader";
+import { HudHeader, HudLayoutMode } from "./components/hud/HudHeader";
 import { AudioMeters } from "./components/hud/AudioMeters";
-import { TranscriptStream } from "./components/hud/TranscriptStream";
+import { TranscriptStream, isInterviewerQuestion } from "./components/hud/TranscriptStream";
 import { SuggestionCard } from "./components/hud/SuggestionCard";
 import { ActionControls } from "./components/hud/ActionControls";
 import { SettingsModal } from "./components/settings/SettingsModal";
 import { StartupSessionScreen } from "./components/session/StartupSessionScreen";
 import { DirectoryPermissionModal } from "./components/common/DirectoryPermissionModal";
 import { exportSessionAsTxt } from "./utils/exportTxt";
-import { Sparkles, Maximize, ShieldCheck } from "lucide-react";
+import { Sparkles, Maximize, ShieldCheck, Pause, Play } from "lucide-react";
 import { I18nProvider } from "./i18n";
 
 const STORAGE_SESSIONS_KEY = "ghostcue_interview_sessions";
 const STORAGE_ACTIVE_SESSION_KEY = "ghostcue_active_session_id";
-const STORAGE_FONT_SCALE_KEY = "ghostcue_font_scale";
 const STORAGE_LAYOUT_MODE_KEY = "ghostcue_layout_mode";
 
 export const App: React.FC = () => {
@@ -25,13 +24,12 @@ export const App: React.FC = () => {
   const [opacity, setOpacity] = useState<number>(0.94);
   const [clickThrough, setClickThrough] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
 
   // Pluely-style User-side Modes & Accessibility
   const [layoutMode, setLayoutMode] = useState<HudLayoutMode>(() => {
     return (localStorage.getItem(STORAGE_LAYOUT_MODE_KEY) as HudLayoutMode) || "split";
-  });
-  const [fontScale, setFontScale] = useState<FontScale>(() => {
-    return (localStorage.getItem(STORAGE_FONT_SCALE_KEY) as FontScale) || "md";
   });
   const [isCompactPill, setIsCompactPill] = useState<boolean>(false);
 
@@ -69,9 +67,50 @@ export const App: React.FC = () => {
     return !localStorage.getItem("ghostcue_directory_permission");
   });
 
-  const handleGrantDirectoryPermission = () => {
+  const [isGrantingDirectory, setIsGrantingDirectory] = useState<boolean>(false);
+
+  const handleGrantDirectoryPermission = async () => {
     localStorage.setItem("ghostcue_directory_permission", "granted");
-    setShowDirectoryPermissionPrompt(false);
+    setIsGrantingDirectory(true);
+    try {
+      const chosenDir = await TauriApi.selectDirectoryDialog();
+      if (chosenDir && chosenDir.trim().length > 0) {
+        const cleanPath = chosenDir.trim();
+        const summary = await TauriApi.scanProjectDirectory(cleanPath);
+        const newDirs = config.project_directories?.includes(cleanPath)
+          ? config.project_directories
+          : [...(config.project_directories || []), cleanPath];
+        const newConfig: AppConfig = {
+          ...config,
+          project_directory: cleanPath,
+          project_directories: newDirs,
+          project_context: summary || "",
+        };
+        setConfig(newConfig);
+        await TauriApi.saveConfig(newConfig);
+
+        if (activeSessionId) {
+          updateSessionsState((sessList) =>
+            sessList.map((s) =>
+              s.id === activeSessionId
+                ? {
+                    ...s,
+                    projectDirectory: cleanPath,
+                    projectDirectories: newDirs,
+                    projectContext: summary || "",
+                    lastActive: new Date().toISOString(),
+                  }
+                : s
+            )
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("Directory grant & scan error:", err);
+    } finally {
+      setIsGrantingDirectory(false);
+      setShowDirectoryPermissionPrompt(false);
+    }
   };
 
   const handleDismissDirectoryPermission = () => {
@@ -81,15 +120,10 @@ export const App: React.FC = () => {
 
   const activePromptRef = useRef<{ id: string; action: string; query?: string; timestamp: string } | null>(null);
 
-  // Layout & Font Scale persistence
+  // Layout persistence
   const handleChangeLayoutMode = (mode: HudLayoutMode) => {
     setLayoutMode(mode);
     localStorage.setItem(STORAGE_LAYOUT_MODE_KEY, mode);
-  };
-
-  const handleChangeFontScale = (scale: FontScale) => {
-    setFontScale(scale);
-    localStorage.setItem(STORAGE_FONT_SCALE_KEY, scale);
   };
 
   // Load persistent sessions from storage
@@ -162,8 +196,8 @@ export const App: React.FC = () => {
       action,
       query,
       answer: fullText.trim(),
-      provider: config.llm_provider,
-      model: getProviderModel(config),
+      provider: configRef.current.llm_provider,
+      model: getProviderModel(configRef.current),
     };
 
     setAiLogs((prev) => {
@@ -189,6 +223,99 @@ export const App: React.FC = () => {
     });
   };
 
+  const inLiveHudRef = useRef<boolean>(inLiveHud);
+  useEffect(() => {
+    inLiveHudRef.current = inLiveHud;
+    if (inLiveHud) {
+      TauriApi.startAudioCapture().catch(console.warn);
+    } else {
+      TauriApi.stopAudioCapture().catch(console.warn);
+      setMicLevel(0);
+      setMicActive(false);
+      setLoopbackLevel(0);
+      setLoopbackActive(false);
+    }
+  }, [inLiveHud]);
+
+  const configRef = useRef<AppConfig>(config);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  const isStreamingRef = useRef<boolean>(isStreaming);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  const layoutModeRef = useRef<HudLayoutMode>(layoutMode);
+  useEffect(() => {
+    layoutModeRef.current = layoutMode;
+  }, [layoutMode]);
+
+  const lastAutoAnsweredTurnRef = useRef<string | null>(null);
+  const handleTriggerActionRef = useRef<((action: string, customQuery?: string, isManualInput?: boolean) => Promise<void>) | null>(null);
+  const autoTriggerTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingAutoTriggerTurnRef = useRef<{ text: string; turnId: string } | null>(null);
+
+  const maybeAutoTrigger = (turnText: string, turnId?: string, speaker?: string) => {
+    if (!inLiveHudRef.current || isPausedRef.current) return;
+    if (!configRef.current.auto_trigger_enabled) return;
+
+    // If Candidate speaks, cancel any pending auto-answer (candidate is already answering)
+    if (speaker && speaker.toLowerCase() !== "interviewer") {
+      if (autoTriggerTimerRef.current) {
+        clearTimeout(autoTriggerTimerRef.current);
+        autoTriggerTimerRef.current = null;
+      }
+      pendingAutoTriggerTurnRef.current = null;
+      return;
+    }
+
+    if (isStreamingRef.current) return;
+
+    const trimmed = turnText.trim();
+    if (trimmed.length < 5) return;
+
+    const turnKey = turnId || trimmed;
+    if (lastAutoAnsweredTurnRef.current === turnKey) return;
+
+    // Check if the current speech contains an interviewer question or prompt
+    if (!isInterviewerQuestion(trimmed)) return;
+
+    // Store latest question text
+    pendingAutoTriggerTurnRef.current = { text: trimmed, turnId: turnKey };
+
+    // Reset debounce timer: wait 1500ms of conversational pause to ensure interviewer finished full thought
+    if (autoTriggerTimerRef.current) {
+      clearTimeout(autoTriggerTimerRef.current);
+    }
+
+    autoTriggerTimerRef.current = setTimeout(() => {
+      autoTriggerTimerRef.current = null;
+      const pending = pendingAutoTriggerTurnRef.current;
+      if (!pending) return;
+
+      if (!inLiveHudRef.current || isPausedRef.current) return;
+      if (!configRef.current.auto_trigger_enabled) return;
+      if (isStreamingRef.current) return;
+
+      const fullQuestion = pending.text.trim();
+      if (fullQuestion.length < 6) return;
+      if (!isInterviewerQuestion(fullQuestion)) return;
+      if (lastAutoAnsweredTurnRef.current === pending.turnId) return;
+
+      lastAutoAnsweredTurnRef.current = pending.turnId;
+
+      if (layoutModeRef.current === "listen") {
+        handleChangeLayoutMode("split");
+      }
+
+      if (handleTriggerActionRef.current) {
+        handleTriggerActionRef.current("hint", fullQuestion, false);
+      }
+    }, 1500);
+  };
+
   // Init config & event listeners on mount
   useEffect(() => {
     let unlistens: Array<() => void> = [];
@@ -197,12 +324,12 @@ export const App: React.FC = () => {
       try {
         const loadedConfig = await TauriApi.getConfig();
         setConfig(loadedConfig);
+        configRef.current = loadedConfig;
         setOpacity(loadedConfig.opacity);
         setClickThrough(loadedConfig.click_through);
 
-        await TauriApi.startAudioCapture();
-
         const u1 = await TauriApi.onTranscript((seg) => {
+          if (!inLiveHudRef.current || isPausedRef.current) return;
           if (micMuted && seg.speaker !== "Interviewer") return;
           if (loopbackMuted && seg.speaker === "Interviewer") return;
 
@@ -230,13 +357,11 @@ export const App: React.FC = () => {
           });
 
           // Auto-trigger AI answer whenever interviewer speaks
-          if (config.auto_trigger_enabled && seg.speaker === "Interviewer" && seg.text.trim().length > 3 && !isStreaming) {
-            handleTriggerAction("hint", seg.text, false);
-          }
+          maybeAutoTrigger(seg.text, seg.id, seg.speaker);
         });
 
         const u2 = await TauriApi.onMicLevel((ev) => {
-          if (micMuted) {
+          if (!inLiveHudRef.current || isPausedRef.current || micMuted) {
             setMicLevel(0);
             setMicActive(false);
           } else {
@@ -246,7 +371,7 @@ export const App: React.FC = () => {
         });
 
         const u3 = await TauriApi.onLoopbackLevel((ev) => {
-          if (loopbackMuted) {
+          if (!inLiveHudRef.current || isPausedRef.current || loopbackMuted) {
             setLoopbackLevel(0);
             setLoopbackActive(false);
           } else {
@@ -255,12 +380,21 @@ export const App: React.FC = () => {
           }
         });
 
-        const u4 = await TauriApi.onLlmStart((ev) => {
+        const u4 = await TauriApi.onLlmStart((ev: any) => {
           setIsStreaming(true);
+          isStreamingRef.current = true;
           setSelectedLogId(null);
           setSuggestion("");
           setLlmError(null);
           setActiveAction(ev.action);
+          if (ev.query && (!activePromptRef.current || !activePromptRef.current.query)) {
+            activePromptRef.current = {
+              id: `log-${Date.now()}`,
+              action: ev.action,
+              query: ev.query,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            };
+          }
         });
 
         const u5 = await TauriApi.onLlmToken((ev) => {
@@ -269,15 +403,17 @@ export const App: React.FC = () => {
 
         const u6 = await TauriApi.onLlmComplete((ev: any) => {
           setIsStreaming(false);
+          isStreamingRef.current = false;
           const fullText = ev.text || ev.full_text;
           if (fullText) {
             setSuggestion(fullText);
-            saveAiLogEntry(fullText);
+            saveAiLogEntry(fullText, ev.action, ev.query);
           }
         });
 
         const u7 = await TauriApi.onLlmError((ev) => {
           setIsStreaming(false);
+          isStreamingRef.current = false;
           setLlmError(ev.error);
         });
 
@@ -291,6 +427,14 @@ export const App: React.FC = () => {
 
     const pollInterval = setInterval(async () => {
       try {
+        if (!inLiveHudRef.current || isPausedRef.current) {
+          setMicLevel(0);
+          setMicActive(false);
+          setLoopbackLevel(0);
+          setLoopbackActive(false);
+          return;
+        }
+
         const lv = await TauriApi.getAudioLevels();
         if (!micMuted && (lv.mic_level > 0 || lv.mic_active)) {
           setMicLevel(lv.mic_level);
@@ -314,8 +458,8 @@ export const App: React.FC = () => {
             const hasNewItem = prev.length !== history.length || (prev.length > 0 && prev[prev.length - 1].id !== history[history.length - 1].id);
             if (hasNewItem) {
               const latest = history[history.length - 1];
-              if (config.auto_trigger_enabled && latest && latest.speaker === "Interviewer" && latest.text.trim().length > 3 && !isStreaming) {
-                handleTriggerAction("hint", latest.text, false);
+              if (latest) {
+                maybeAutoTrigger(latest.text, latest.id, latest.speaker);
               }
 
               if (activeSessionId) {
@@ -338,6 +482,9 @@ export const App: React.FC = () => {
     return () => {
       unlistens.forEach((u) => u());
       clearInterval(pollInterval);
+      if (autoTriggerTimerRef.current) {
+        clearTimeout(autoTriggerTimerRef.current);
+      }
     };
   }, [activeSessionId, micMuted, loopbackMuted]);
 
@@ -358,6 +505,13 @@ export const App: React.FC = () => {
       if (e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
         e.preventDefault();
         handleToggleClickThrough();
+        return;
+      }
+
+      // Ctrl + Shift + P: Toggle Pause / Resume
+      if (e.ctrlKey && e.shiftKey && (e.key === "P" || e.key === "p")) {
+        e.preventDefault();
+        handleTogglePause();
         return;
       }
 
@@ -459,6 +613,7 @@ export const App: React.FC = () => {
 
   // Session Operations
   const handleSelectSession = (sessionId: string) => {
+    TauriApi.clearTranscriptHistory().catch(console.warn);
     setActiveSessionId(sessionId);
     localStorage.setItem(STORAGE_ACTIVE_SESSION_KEY, sessionId);
     const targetSession = sessions.find((s) => s.id === sessionId);
@@ -468,21 +623,24 @@ export const App: React.FC = () => {
       setSuggestion(targetSession.lastSuggestion || "");
       setSelectedLogId(null);
       const newConfig: AppConfig = {
-        ...config,
-        target_role: targetSession.role || config.target_role,
+        ...configRef.current,
+        target_role: targetSession.role || configRef.current.target_role,
         company_name: targetSession.company || "",
         interview_title: targetSession.title || "",
-        job_description: targetSession.jobDescription || config.job_description || "",
-        candidate_resume: targetSession.candidateResume || config.candidate_resume || "",
-        project_directory: targetSession.projectDirectory || config.project_directory || "",
-        project_context: targetSession.projectContext || config.project_context || "",
+        job_description: targetSession.jobDescription || configRef.current.job_description || "",
+        candidate_resume: targetSession.candidateResume || configRef.current.candidate_resume || "",
+        project_directory: targetSession.projectDirectory || configRef.current.project_directory || "",
+        project_directories: targetSession.projectDirectories || (targetSession.projectDirectory ? [targetSession.projectDirectory] : configRef.current.project_directories || []),
+        project_context: targetSession.projectContext || configRef.current.project_context || "",
       };
+      configRef.current = newConfig;
       setConfig(newConfig);
       TauriApi.saveConfig(newConfig);
     }
   };
 
   const handleCreateSession = (data: Omit<InterviewSession, "id" | "createdAt" | "lastActive" | "transcripts" | "aiLogs">) => {
+    TauriApi.clearTranscriptHistory().catch(console.warn);
     const newSession: InterviewSession = {
       ...data,
       id: `session-${Date.now()}`,
@@ -499,17 +657,24 @@ export const App: React.FC = () => {
     setSuggestion("");
     setSelectedLogId(null);
     const newConfig: AppConfig = {
-      ...config,
-      target_role: data.role || config.target_role,
+      ...configRef.current,
+      target_role: data.role || configRef.current.target_role,
       company_name: data.company || "",
       interview_title: data.title || "",
-      job_description: data.jobDescription || config.job_description || "",
-      candidate_resume: data.candidateResume || config.candidate_resume || "",
-      project_directory: data.projectDirectory || config.project_directory || "",
-      project_context: data.projectContext || config.project_context || "",
+      job_description: data.jobDescription || configRef.current.job_description || "",
+      candidate_resume: data.candidateResume || configRef.current.candidate_resume || "",
+      project_directory: data.projectDirectory || configRef.current.project_directory || "",
+      project_directories: data.projectDirectories || (data.projectDirectory ? [data.projectDirectory] : configRef.current.project_directories || []),
+      project_context: data.projectContext || configRef.current.project_context || "",
     };
+    configRef.current = newConfig;
     setConfig(newConfig);
     TauriApi.saveConfig(newConfig);
+  };
+
+  const handleStartLiveHud = () => {
+    TauriApi.clearTranscriptHistory().catch(console.warn);
+    setInLiveHud(true);
   };
 
   const handleDeleteSession = (sessionId: string) => {
@@ -524,7 +689,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleExportActiveSessionTxt = () => {
+  const handleExportActiveSessionTxt = async () => {
     const activeSession = sessions.find((s) => s.id === activeSessionId);
     const currentSession: InterviewSession = {
       id: activeSessionId || `session-${Date.now()}`,
@@ -534,13 +699,14 @@ export const App: React.FC = () => {
       jobDescription: activeSession?.jobDescription || config.job_description,
       candidateResume: activeSession?.candidateResume || config.candidate_resume,
       projectDirectory: activeSession?.projectDirectory || config.project_directory,
+      projectDirectories: activeSession?.projectDirectories || config.project_directories,
       projectContext: activeSession?.projectContext || config.project_context,
       createdAt: activeSession?.createdAt || new Date().toISOString(),
       lastActive: new Date().toISOString(),
       transcripts: transcripts,
       aiLogs: aiLogs,
     };
-    exportSessionAsTxt(currentSession, config);
+    await exportSessionAsTxt(currentSession, config);
   };
 
   const handleClearAiLogs = () => {
@@ -585,10 +751,46 @@ export const App: React.FC = () => {
   };
 
   const handleToggleAutoTrigger = async () => {
-    const next = !config.auto_trigger_enabled;
-    const newConfig = { ...config, auto_trigger_enabled: next };
+    const next = !configRef.current.auto_trigger_enabled;
+    const newConfig = { ...configRef.current, auto_trigger_enabled: next };
+    configRef.current = newConfig;
     setConfig(newConfig);
     await TauriApi.saveConfig(newConfig);
+  };
+
+  const handleTogglePause = async () => {
+    const next = !isPaused;
+    setIsPaused(next);
+    isPausedRef.current = next;
+
+    if (next) {
+      if (autoTriggerTimerRef.current) {
+        clearTimeout(autoTriggerTimerRef.current);
+        autoTriggerTimerRef.current = null;
+      }
+      pendingAutoTriggerTurnRef.current = null;
+
+      // Immediate freeze: cancel active generation and halt audio capture
+      await TauriApi.cancelAiSuggestion();
+      setIsStreaming(false);
+      isStreamingRef.current = false;
+      try {
+        await TauriApi.stopAudioCapture();
+      } catch (err) {
+        console.warn("Audio pause error:", err);
+      }
+      setMicLevel(0);
+      setMicActive(false);
+      setLoopbackLevel(0);
+      setLoopbackActive(false);
+    } else {
+      // Resume audio capture
+      try {
+        await TauriApi.startAudioCapture();
+      } catch (err) {
+        console.warn("Audio resume error:", err);
+      }
+    }
   };
 
   const handleClearTranscripts = async () => {
@@ -626,6 +828,7 @@ export const App: React.FC = () => {
     setLlmError(null);
     setSuggestion("");
     setIsStreaming(true);
+    isStreamingRef.current = true;
 
     if (hasQuery && isManualInput) {
       const manualSegment: TranscriptSegment = {
@@ -640,8 +843,15 @@ export const App: React.FC = () => {
       setTranscripts((prev) => [...prev, manualSegment]);
     }
 
+    // Extract recent Q&A history from this session to guarantee technical consistency & continuity
+    const pastAnswersPayload = aiLogs.slice(-6).map((log) => ({
+      action: log.action,
+      query: log.query || "",
+      answer: log.answer,
+    }));
+
     try {
-      const res = await TauriApi.generateAiSuggestion(action, customQuery);
+      const res = await TauriApi.generateAiSuggestion(action, customQuery, pastAnswersPayload);
       if (res && res.trim().length > 0) {
         setSuggestion((prev) => prev || res);
         saveAiLogEntry(res, action, promptQuery);
@@ -651,25 +861,40 @@ export const App: React.FC = () => {
       setLlmError(err?.toString() || "Failed to generate AI suggestion. Check API key in settings.");
     } finally {
       setIsStreaming(false);
+      isStreamingRef.current = false;
     }
   };
 
+  handleTriggerActionRef.current = handleTriggerAction;
+  useEffect(() => {
+    handleTriggerActionRef.current = handleTriggerAction;
+  }, [handleTriggerAction]);
+
   const handleCancelAi = async () => {
+    if (autoTriggerTimerRef.current) {
+      clearTimeout(autoTriggerTimerRef.current);
+      autoTriggerTimerRef.current = null;
+    }
+    pendingAutoTriggerTurnRef.current = null;
     await TauriApi.cancelAiSuggestion();
     setIsStreaming(false);
+    isStreamingRef.current = false;
   };
 
   const handleSaveSettings = async (newConfig: AppConfig) => {
     const saved = await TauriApi.saveConfig(newConfig);
+    configRef.current = saved;
     setConfig(saved);
     setOpacity(saved.opacity);
     await TauriApi.setAntiCapture(saved.anti_capture_enabled);
 
-    try {
-      await TauriApi.stopAudioCapture();
-      await TauriApi.startAudioCapture();
-    } catch (err) {
-      console.warn("Audio restart error:", err);
+    if (inLiveHud) {
+      try {
+        await TauriApi.stopAudioCapture();
+        await TauriApi.startAudioCapture();
+      } catch (err) {
+        console.warn("Audio restart error:", err);
+      }
     }
   };
 
@@ -682,7 +907,7 @@ export const App: React.FC = () => {
         initialLocale={config.ui_language}
         onLocaleChange={(l) => setConfig((prev) => ({ ...prev, ui_language: l }))}
       >
-        <main className={`relative flex flex-col h-screen w-screen overflow-hidden font-sans font-scale-${fontScale}`}>
+        <main className="relative flex flex-col h-screen w-screen overflow-hidden font-sans">
           <StartupSessionScreen
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -691,18 +916,20 @@ export const App: React.FC = () => {
             onCreateSession={handleCreateSession}
             onDeleteSession={handleDeleteSession}
             onOpenSettings={() => setIsSettingsOpen(true)}
-            onStartLiveHud={() => setInLiveHud(true)}
+            onStartLiveHud={handleStartLiveHud}
           />
           <SettingsModal
             isOpen={isSettingsOpen}
             onClose={() => setIsSettingsOpen(false)}
             config={config}
             onSave={handleSaveSettings}
+            inLiveHud={inLiveHud}
           />
           <DirectoryPermissionModal
             isOpen={showDirectoryPermissionPrompt}
             onGrant={handleGrantDirectoryPermission}
             onDismiss={handleDismissDirectoryPermission}
+            isGranting={isGrantingDirectory}
           />
         </main>
       </I18nProvider>
@@ -723,7 +950,7 @@ export const App: React.FC = () => {
               TauriApi.startDragging();
             }
           }}
-          className={`relative flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-full shadow-2xl select-none font-sans font-scale-${fontScale}`}
+          className="relative flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-full shadow-2xl select-none font-sans"
           style={{ backgroundColor: `rgba(15, 23, 42, ${opacity})` }}
         >
           <div className="flex items-center gap-2">
@@ -745,11 +972,26 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Pause button in compact pill */}
+            <button
+              type="button"
+              onClick={handleTogglePause}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-full transition-colors ${
+                isPaused
+                  ? "bg-amber-500/30 text-amber-300 border border-amber-400/80 animate-pulse"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+              }`}
+              title={isPaused ? "Resume (Ctrl+Shift+P)" : "Pause (Ctrl+Shift+P)"}
+            >
+              {isPaused ? <Play className="w-3 h-3 text-amber-400 fill-amber-400" /> : <Pause className="w-3 h-3 text-slate-400" />}
+              <span>{isPaused ? "Resume" : "Pause"}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => handleTriggerAction("hint")}
-              disabled={isStreaming}
-              className="flex items-center gap-1 px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
+              disabled={isStreaming || isPaused}
+              className="flex items-center gap-1 px-3 py-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
               title="Instant Answer (Ctrl+Shift+Space)"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -776,7 +1018,7 @@ export const App: React.FC = () => {
       onLocaleChange={(l) => setConfig((prev) => ({ ...prev, ui_language: l }))}
     >
       <main
-        className={`relative flex flex-col h-screen w-screen overflow-hidden select-none font-sans font-scale-${fontScale} rounded-xl border border-slate-700/60 shadow-2xl`}
+        className="relative flex flex-col h-screen w-screen overflow-hidden select-none font-sans rounded-xl border border-slate-700/60 shadow-2xl"
         style={{
           backgroundColor: `rgba(11, 16, 27, ${opacity})`,
         }}
@@ -791,12 +1033,12 @@ export const App: React.FC = () => {
           onOpenSessions={() => setInLiveHud(false)}
           layoutMode={layoutMode}
           onChangeLayoutMode={handleChangeLayoutMode}
-          fontScale={fontScale}
-          onChangeFontScale={handleChangeFontScale}
           isCompactPill={isCompactPill}
           onToggleCompactPill={() => setIsCompactPill((prev) => !prev)}
           activeProvider={config.llm_provider}
           sessionTitle={activeSession?.title}
+          isPaused={isPaused}
+          onTogglePause={handleTogglePause}
         />
 
         {/* 2. Audio Level Strip */}
@@ -810,6 +1052,7 @@ export const App: React.FC = () => {
           loopbackMuted={loopbackMuted}
           onToggleMicMute={() => setMicMuted((prev) => !prev)}
           onToggleLoopbackMute={() => setLoopbackMuted((prev) => !prev)}
+          isPaused={isPaused}
         />
 
         {/* 3. Main Workspace based on Layout Mode */}
@@ -865,7 +1108,10 @@ export const App: React.FC = () => {
             <TranscriptStream
               transcripts={transcripts}
               onClear={handleClearTranscripts}
-              onAskAiAboutTurn={(text: string) => handleTriggerAction("hint", text, false)}
+              onAskAiAboutTurn={(text: string) => {
+                setLayoutMode("split");
+                handleTriggerAction("hint", text, false);
+              }}
               autoTriggerEnabled={config.auto_trigger_enabled}
               onToggleAutoTrigger={handleToggleAutoTrigger}
               aiLogs={aiLogs}
@@ -909,6 +1155,7 @@ export const App: React.FC = () => {
           onClose={() => setIsSettingsOpen(false)}
           config={config}
           onSave={handleSaveSettings}
+          inLiveHud={inLiveHud}
         />
 
         {/* 7. Directory Access Permission Modal */}
@@ -916,6 +1163,7 @@ export const App: React.FC = () => {
           isOpen={showDirectoryPermissionPrompt}
           onGrant={handleGrantDirectoryPermission}
           onDismiss={handleDismissDirectoryPermission}
+          isGranting={isGrantingDirectory}
         />
       </main>
     </I18nProvider>

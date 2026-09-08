@@ -37,20 +37,24 @@ pub struct AppConfig {
 
     // Language & Localization
     #[serde(default = "default_ui_language")]
-    pub ui_language: String, // "en", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru"
+    pub ui_language: String, // "en", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru", "tl-PH"
     #[serde(default = "default_auto_language")]
-    pub stt_language: String, // "auto", "en", "zh", "es", "ja", "de", "fr", "pt", "ko", "ru", "hi", "ar"
+    pub stt_language: String, // "auto", "en", "tl", "zh", "es", "ja", "de", "fr", "pt", "ko", "ru", "hi", "ar"
+    #[serde(default)]
+    pub stt_languages: Vec<String>, // e.g. ["en", "tl"] for restricted multi-language detection
     #[serde(default = "default_auto_language")]
-    pub response_language: String, // "auto", "en", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru", "hi", "ar"
+    pub response_language: String, // "auto", "en", "tl-PH", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru", "hi", "ar"
 
     // STT Engine
-    pub stt_provider: String, // "local_whisper" | "deepgram" | "mock"
+    pub stt_provider: String, // "cloud_whisper" | "local_whisper" | "deepgram" | "mock"
     pub whisper_model_path: String,
     pub whisper_model_size: String, // "tiny.en", "base.en", "small.en"
     pub deepgram_api_key: String,
 
     // LLM Provider
-    pub llm_provider: String, // "ollama" | "openai" | "anthropic" | "groq" | "custom"
+    pub llm_provider: String, // "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "custom"
+    pub gemini_api_key: String,
+    pub gemini_model: String,
     pub ollama_endpoint: String,
     pub ollama_model: String,
     pub openai_api_key: String,
@@ -69,6 +73,8 @@ pub struct AppConfig {
     pub job_description: String,
     pub candidate_resume: String,
     pub project_directory: String,
+    #[serde(default)]
+    pub project_directories: Vec<String>,
     pub project_context: String,
     pub system_prompt_override: String,
     pub auto_trigger_enabled: bool,
@@ -90,10 +96,11 @@ impl Default for AppConfig {
 
             vad_sensitivity: 0.5,
             vad_speech_threshold_ms: 300,
-            vad_silence_cutoff_ms: 800,
+            vad_silence_cutoff_ms: 1600,
 
             ui_language: "en".to_string(),
             stt_language: "auto".to_string(),
+            stt_languages: vec!["en".to_string(), "tl".to_string()],
             response_language: "auto".to_string(),
 
             stt_provider: "cloud_whisper".to_string(),
@@ -101,7 +108,9 @@ impl Default for AppConfig {
             whisper_model_size: "base.en".to_string(),
             deepgram_api_key: "".to_string(),
 
-            llm_provider: "openai".to_string(),
+            llm_provider: "gemini".to_string(),
+            gemini_api_key: "".to_string(),
+            gemini_model: "gemini-2.5-flash".to_string(),
             ollama_endpoint: "http://localhost:11434".to_string(),
             ollama_model: "llama3.2".to_string(),
             openai_api_key: "".to_string(),
@@ -119,6 +128,7 @@ impl Default for AppConfig {
             job_description: "Full Stack / Distributed Systems Engineer. Tech: Rust, TypeScript, React, System Design, Algorithms.".to_string(),
             candidate_resume: "Experienced engineer with 6+ years in backend systems, high-concurrency microservices, TypeScript, and modern frontend frameworks.".to_string(),
             project_directory: "".to_string(),
+            project_directories: Vec::new(),
             project_context: "".to_string(),
             system_prompt_override: "".to_string(),
             auto_trigger_enabled: true,
@@ -162,6 +172,18 @@ impl AppConfig {
                         }
                     }
                 }
+            }
+        }
+
+        if let Ok(val) = env::var("GEMINI_API_KEY") {
+            if !val.trim().is_empty() {
+                config.gemini_api_key = val.trim().to_string();
+                config.llm_provider = "gemini".to_string();
+            }
+        }
+        if let Ok(val) = env::var("GEMINI_MODEL") {
+            if !val.trim().is_empty() {
+                config.gemini_model = val.trim().to_string();
             }
         }
 
