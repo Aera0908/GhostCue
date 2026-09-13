@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 32" fill="none">
+  <defs>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0" />
+      <stop offset="20%" stop-color="#38bdf8" stop-opacity="0.35" />
+      <stop offset="45%" stop-color="#6366f1" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#a855f7" stop-opacity="1" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.85" />
+      <stop offset="80%" stop-color="#38bdf8" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+      <stop offset="50%" stop-color="#818cf8" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-100%" width="140%" height="300%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Diffuse glow line -->
+  <line x1="120" y1="16" x2="1080" y2="16" stroke="url(#glowGrad)" stroke-width="4" filter="url(#softGlow)" />
+
+  <!-- Crisp center-aligned track -->
+  <line x1="80" y1="16" x2="1120" y2="16" stroke="url(#lineGrad)" stroke-width="1.2" stroke-linecap="round" />
+
+  <!-- Center geometric motif -->
+  <g transform="translate(600, 16)" filter="url(#softGlow)">
+    <!-- Outer diamond -->
+    <rect x="-7" y="-7" width="14" height="14" rx="2" transform="rotate(45)" fill="#0f172a" stroke="#818cf8" stroke-width="1.5" />
+    <!-- Inner diamond core -->
+    <rect x="-3" y="-3" width="6" height="6" rx="1" transform="rotate(45)" fill="#38bdf8" />
+
+    <!-- Left accent brackets -->
+    <circle cx="-24" cy="0" r="1.5" fill="#818cf8" opacity="0.9" />
+    <circle cx="-38" cy="0" r="1" fill="#38bdf8" opacity="0.6" />
+    <path d="M-18 -5 L-14 0 L-18 5" stroke="#6366f1" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Right accent brackets -->
+    <circle cx="24" cy="0" r="1.5" fill="#818cf8" opacity="0.9" />
+    <circle cx="38" cy="0" r="1" fill="#38bdf8" opacity="0.6" />
+    <path d="M18 -5 L14 0 L18 5" stroke="#6366f1" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>
