@@ -226,14 +226,18 @@ export const App: React.FC = () => {
 
   const getProviderModel = (cfg: AppConfig) => {
     switch (cfg.llm_provider) {
+      case "gemini":
+        return cfg.gemini_model || "gemini-2.5-flash";
       case "ollama":
-        return cfg.ollama_model;
+        return cfg.ollama_model || "qwen2.5-coder:7b";
       case "openai":
-        return cfg.openai_model;
+        return cfg.openai_model || "gpt-4o";
       case "anthropic":
-        return cfg.anthropic_model;
+        return cfg.anthropic_model || "claude-3-5-sonnet-20241022";
       case "groq":
         return cfg.openai_model || "llama-3.3-70b-versatile";
+      case "deepseek":
+        return cfg.deepseek_model || cfg.custom_model || "deepseek-chat";
       default:
         return cfg.custom_model || cfg.llm_provider;
     }

@@ -115,6 +115,34 @@ impl LlmOrchestrator {
                 );
                 client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
+            "deepseek" => {
+                let api_key = if !config.deepseek_api_key.is_empty() {
+                    config.deepseek_api_key
+                } else if !config.custom_api_key.is_empty() {
+                    config.custom_api_key
+                } else {
+                    config.openai_api_key
+                };
+                let client = OpenAiClient::new(
+                    "https://api.deepseek.com/v1".to_string(),
+                    api_key,
+                    effective_model.clone(),
+                );
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+            }
+            "openrouter" => {
+                let api_key = if !config.custom_api_key.is_empty() {
+                    config.custom_api_key
+                } else {
+                    config.openai_api_key
+                };
+                let client = OpenAiClient::new(
+                    "https://openrouter.ai/api/v1".to_string(),
+                    api_key,
+                    effective_model.clone(),
+                );
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+            }
             _ => {
                 let client = OpenAiClient::new(config.custom_endpoint, config.custom_api_key, effective_model.clone());
                 client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await

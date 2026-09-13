@@ -32,6 +32,10 @@ fn default_live_ocr_interval() -> u64 {
     10
 }
 
+fn default_deepseek_model() -> String {
+    "deepseek-chat".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     // Window & Stealth
@@ -80,6 +84,10 @@ pub struct AppConfig {
     pub openai_base_url: String,
     pub anthropic_api_key: String,
     pub anthropic_model: String,
+    #[serde(default)]
+    pub deepseek_api_key: String,
+    #[serde(default = "default_deepseek_model")]
+    pub deepseek_model: String,
     pub custom_endpoint: String,
     pub custom_api_key: String,
     pub custom_model: String,
@@ -147,6 +155,8 @@ impl Default for AppConfig {
             openai_base_url: "https://api.openai.com/v1".to_string(),
             anthropic_api_key: "".to_string(),
             anthropic_model: "claude-3-5-sonnet-20241022".to_string(),
+            deepseek_api_key: "".to_string(),
+            deepseek_model: "deepseek-chat".to_string(),
             custom_endpoint: "".to_string(),
             custom_api_key: "".to_string(),
             custom_model: "".to_string(),
@@ -259,6 +269,21 @@ impl AppConfig {
             if let Ok(val) = env::var("ANTHROPIC_MODEL") {
                 if !val.trim().is_empty() {
                     config.anthropic_model = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.deepseek_api_key.is_empty() {
+            if let Ok(val) = env::var("DEEPSEEK_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.deepseek_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.deepseek_model.is_empty() {
+            if let Ok(val) = env::var("DEEPSEEK_MODEL") {
+                if !val.trim().is_empty() {
+                    config.deepseek_model = val.trim().to_string();
                 }
             }
         }
@@ -401,6 +426,8 @@ impl AppConfig {
                 "openai" => if self.openai_model.is_empty() { "gpt-4o".to_string() } else { self.openai_model.clone() },
                 "anthropic" => if self.anthropic_model.is_empty() { "claude-3-5-sonnet-20241022".to_string() } else { self.anthropic_model.clone() },
                 "groq" => if self.openai_model.is_empty() { "llama-3.3-70b-versatile".to_string() } else { self.openai_model.clone() },
+                "deepseek" => if self.deepseek_model.is_empty() { "deepseek-chat".to_string() } else { self.deepseek_model.clone() },
+                "openrouter" => if self.custom_model.is_empty() { "openrouter/auto".to_string() } else { self.custom_model.clone() },
                 _ => self.custom_model.clone(),
             };
         }
@@ -456,6 +483,20 @@ impl AppConfig {
                     "llama-3.3-70b-versatile".to_string()
                 } else {
                     "llama-3.1-8b-instant".to_string()
+                }
+            }
+            "deepseek" => {
+                if is_complex_task {
+                    "deepseek-reasoner".to_string()
+                } else {
+                    "deepseek-chat".to_string()
+                }
+            }
+            "openrouter" => {
+                if is_complex_task {
+                    "deepseek/deepseek-r1".to_string()
+                } else {
+                    "deepseek/deepseek-chat".to_string()
                 }
             }
             "ollama" => {

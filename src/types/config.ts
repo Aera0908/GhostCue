@@ -30,7 +30,7 @@ export interface AppConfig {
   deepgram_api_key: string;
 
   // LLM Provider
-  llm_provider: "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "custom";
+  llm_provider: "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "deepseek" | "custom" | string;
   gemini_api_key: string;
   gemini_model: string;
   ollama_endpoint: string;
@@ -40,6 +40,8 @@ export interface AppConfig {
   openai_base_url: string;
   anthropic_api_key: string;
   anthropic_model: string;
+  deepseek_api_key?: string;
+  deepseek_model?: string;
   custom_endpoint: string;
   custom_api_key: string;
   custom_model: string;

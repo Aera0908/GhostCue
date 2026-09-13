@@ -42,6 +42,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   openai_base_url: "https://api.openai.com/v1",
   anthropic_api_key: "",
   anthropic_model: "claude-3-5-sonnet-20241022",
+  deepseek_api_key: "",
+  deepseek_model: "deepseek-chat",
   custom_endpoint: "",
   custom_api_key: "",
   custom_model: "",
