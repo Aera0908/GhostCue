@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="GhostCue Banner" width="100%" />
+  <img src="assets/GhostCue_icon.png" alt="GhostCue App Icon" width="128" height="128" />
 </p>
+
+<h1 align="center">GhostCue</h1>
 
 <p align="center">
   <a href="https://tauri.app"><img src="https://img.shields.io/badge/Tauri-v2.0-blue.svg?logo=tauri&logoColor=white" alt="Tauri v2" /></a>

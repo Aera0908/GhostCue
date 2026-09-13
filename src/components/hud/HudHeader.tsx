@@ -163,6 +163,11 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
     >
       {/* Left: Sessions & View Mode Switcher (Full 3-mode selector if available, or compact Carousel when tight) */}
       <div className="flex items-center gap-1.5 shrink-0">
+        <img
+          src="/GhostCue_icon.png"
+          alt="GhostCue"
+          className="w-4 h-4 rounded object-cover shadow-[0_0_6px_rgba(56,189,248,0.4)] shrink-0 select-none pointer-events-none"
+        />
         {/* Sessions Button */}
         <button
           type="button"

@@ -363,7 +363,11 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
         className="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800 cursor-move"
       >
         <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]" />
+          <img
+            src="/GhostCue_icon.png"
+            alt="GhostCue"
+            className="w-5 h-5 rounded-md object-cover shadow-[0_0_10px_rgba(56,189,248,0.35)] shrink-0"
+          />
           <span className="text-sm font-bold text-slate-100 tracking-tight font-sans">
             GhostCue
           </span>
