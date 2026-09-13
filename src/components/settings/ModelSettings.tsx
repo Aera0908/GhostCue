@@ -21,10 +21,12 @@ const GEMINI_MODELS = [
   { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", desc: "Sub-second low latency multimodal inference" },
   { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite", desc: "Cost-efficient high-speed inference" },
   { id: "gemini-2.0-pro-exp-02-05", name: "Gemini 2.0 Pro Exp", desc: "Advanced coding & complex logic reasoning" },
-  { id: "gemini-2.0-flash-thinking-exp-01-21", name: "Gemini 2.0 Flash Thinking", desc: "Chain-of-thought reasoning" },
+  { id: "gemini-2.0-flash-thinking-exp-01-21", name: "Gemini 2.0 Flash Thinking", desc: "Chain-of-thought visible reasoning" },
   { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", desc: "Deep codebase analysis & 2M context" },
   { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", desc: "Lightweight & responsive" },
   { id: "gemini-1.5-flash-8b", name: "Gemini 1.5 Flash 8B", desc: "High throughput small model" },
+  { id: "gemini-exp-1206", name: "Gemini Exp 1206", desc: "Experimental multimodal benchmark leader" },
+  { id: "learnlm-1.5-pro-experimental", name: "LearnLM 1.5 Pro Exp", desc: "Pedagogical & educational reasoning" },
 ];
 
 const OPENAI_MODELS = [
@@ -53,22 +55,36 @@ const GROQ_MODELS = [
   { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B Versatile", desc: "Recommended • 70B parameters, sub-100ms" },
   { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B Instant", desc: "Ultra-low latency, sub-50ms token generation" },
   { id: "deepseek-r1-distill-llama-70b", name: "DeepSeek R1 Distill 70B", desc: "DeepSeek reasoning on Groq LPU" },
+  { id: "qwen-2.5-32b", name: "Qwen 2.5 32B", desc: "High reasoning multilingual model on Groq" },
+  { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B", desc: "Code intelligence specialist on Groq" },
   { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B", desc: "High throughput MoE architecture (32k context)" },
   { id: "gemma2-9b-it", name: "Google Gemma 2 9B", desc: "Compact Google language model" },
 ];
 
 const OLLAMA_MODELS = [
   { id: "qwen2.5-coder:7b", name: "Qwen 2.5 Coder (7B)", desc: "Default • Optimized for programming & architecture" },
+  { id: "qwen2.5-coder:14b", name: "Qwen 2.5 Coder (14B)", desc: "High-accuracy code & algorithm reasoning" },
+  { id: "qwen2.5-coder:32b", name: "Qwen 2.5 Coder (32B)", desc: "Flagship local code synthesis" },
+  { id: "llama3.3:70b", name: "Llama 3.3 (70B)", desc: "Flagship open weights reasoning" },
   { id: "llama3.1:8b", name: "Llama 3.1 (8B)", desc: "Balanced local performance & conversation" },
+  { id: "llama3.1:70b", name: "Llama 3.1 (70B)", desc: "High capacity open weights model" },
   { id: "qwen2.5:7b", name: "Qwen 2.5 (7B)", desc: "General instruction & technical tasks" },
+  { id: "qwen2.5:14b", name: "Qwen 2.5 (14B)", desc: "Enhanced technical reasoning" },
+  { id: "qwen2.5:32b", name: "Qwen 2.5 (32B)", desc: "Deep instruction following" },
   { id: "llama3:latest", name: "Llama 3 (8B)", desc: "Standard Meta Llama 3 model" },
   { id: "phi3:mini", name: "Microsoft Phi-3 Mini (3.8B)", desc: "Compact & efficient on CPU" },
-  { id: "llama3.2", name: "Llama 3.2 (3B)", desc: "Lightweight & fast on local CPU/GPU" },
-  { id: "deepseek-r1:8b", name: "DeepSeek R1 (8B)", desc: "Local chain-of-thought reasoning" },
+  { id: "llama3.2:3b", name: "Llama 3.2 (3B)", desc: "Lightweight & fast on local CPU/GPU" },
+  { id: "llama3.2:1b", name: "Llama 3.2 (1B)", desc: "Ultra-compact fast model" },
+  { id: "llama3.2-vision", name: "Llama 3.2 Vision", desc: "Local multimodal screen vision" },
+  { id: "deepseek-r1:7b", name: "DeepSeek R1 (7B)", desc: "Qwen-distilled local chain-of-thought" },
+  { id: "deepseek-r1:8b", name: "DeepSeek R1 (8B)", desc: "Llama-distilled local chain-of-thought" },
   { id: "deepseek-r1:14b", name: "DeepSeek R1 (14B)", desc: "Enhanced local reasoning capacity" },
-  { id: "mistral", name: "Mistral (7B)", desc: "General technical Q&A" },
-  { id: "phi4", name: "Microsoft Phi-4 (14B)", desc: "High reasoning capacity" },
-  { id: "gemma2", name: "Google Gemma 2 (9B)", desc: "Fast Google local model" },
+  { id: "deepseek-r1:32b", name: "DeepSeek R1 (32B)", desc: "Frontier local reasoning capacity" },
+  { id: "mistral:7b", name: "Mistral (7B)", desc: "General technical Q&A" },
+  { id: "phi4:14b", name: "Microsoft Phi-4 (14B)", desc: "High reasoning capacity" },
+  { id: "gemma2:9b", name: "Google Gemma 2 (9B)", desc: "Fast Google local model" },
+  { id: "gemma2:27b", name: "Google Gemma 2 (27B)", desc: "High-capacity Google local model" },
+  { id: "codellama:7b", name: "CodeLlama (7B)", desc: "Meta code specialist" },
 ];
 
 const MULTI_LANG_OPTIONS = [
@@ -92,7 +108,21 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
-  const [customOllamaInput, setCustomOllamaInput] = useState(false);
+  const [customGeminiInput, setCustomGeminiInput] = useState(
+    () => !!config.gemini_model && !GEMINI_MODELS.some((m) => m.id === config.gemini_model)
+  );
+  const [customOpenAIInput, setCustomOpenAIInput] = useState(
+    () => !!config.openai_model && !OPENAI_MODELS.some((m) => m.id === config.openai_model)
+  );
+  const [customAnthropicInput, setCustomAnthropicInput] = useState(
+    () => !!config.anthropic_model && !ANTHROPIC_MODELS.some((m) => m.id === config.anthropic_model)
+  );
+  const [customGroqInput, setCustomGroqInput] = useState(
+    () => !!config.openai_model && !GROQ_MODELS.some((m) => m.id === config.openai_model)
+  );
+  const [customOllamaInput, setCustomOllamaInput] = useState(
+    () => !!config.ollama_model && !OLLAMA_MODELS.some((m) => m.id === config.ollama_model)
+  );
 
   useEffect(() => {
     TauriApi.getAvailableWhisperModels().then((models) => {
@@ -407,20 +437,39 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             </div>
 
             <div>
-              <label className="block font-bold text-slate-100 mb-1.5 uppercase">
-                Gemini Model Selection
-              </label>
-              <select
-                value={config.gemini_model || "gemini-2.5-flash"}
-                onChange={(e) => onChange("gemini_model", e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
-              >
-                {GEMINI_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — {m.desc}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-bold text-slate-100 uppercase">
+                  Gemini Model Selection
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomGeminiInput(!customGeminiInput)}
+                  className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold"
+                >
+                  {customGeminiInput ? "Choose from list" : "Type custom model tag"}
+                </button>
+              </div>
+              {customGeminiInput ? (
+                <input
+                  type="text"
+                  value={config.gemini_model || ""}
+                  onChange={(e) => onChange("gemini_model", e.target.value)}
+                  placeholder="e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:border-sky-400"
+                />
+              ) : (
+                <select
+                  value={config.gemini_model || "gemini-2.5-flash"}
+                  onChange={(e) => onChange("gemini_model", e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
+                >
+                  {GEMINI_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.desc}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}
@@ -442,20 +491,39 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-100 mb-1.5 uppercase">
-                OpenAI Model Selection
-              </label>
-              <select
-                value={config.openai_model || "gpt-4o"}
-                onChange={(e) => onChange("openai_model", e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
-              >
-                {OPENAI_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — {m.desc}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-bold text-slate-100 uppercase">
+                  OpenAI Model Selection
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomOpenAIInput(!customOpenAIInput)}
+                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold"
+                >
+                  {customOpenAIInput ? "Choose from list" : "Type custom model tag"}
+                </button>
+              </div>
+              {customOpenAIInput ? (
+                <input
+                  type="text"
+                  value={config.openai_model || ""}
+                  onChange={(e) => onChange("openai_model", e.target.value)}
+                  placeholder="e.g. gpt-4o, o3-mini, o1, chatgpt-4o-latest"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:border-sky-400"
+                />
+              ) : (
+                <select
+                  value={config.openai_model || "gpt-4o"}
+                  onChange={(e) => onChange("openai_model", e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
+                >
+                  {OPENAI_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.desc}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}
@@ -477,20 +545,39 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-100 mb-1.5 uppercase">
-                Claude Model Selection
-              </label>
-              <select
-                value={config.anthropic_model || "claude-3-5-sonnet-20241022"}
-                onChange={(e) => onChange("anthropic_model", e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
-              >
-                {ANTHROPIC_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — {m.desc}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-bold text-slate-100 uppercase">
+                  Claude Model Selection
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomAnthropicInput(!customAnthropicInput)}
+                  className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold"
+                >
+                  {customAnthropicInput ? "Choose from list" : "Type custom model tag"}
+                </button>
+              </div>
+              {customAnthropicInput ? (
+                <input
+                  type="text"
+                  value={config.anthropic_model || ""}
+                  onChange={(e) => onChange("anthropic_model", e.target.value)}
+                  placeholder="e.g. claude-3-5-sonnet-20241022, claude-3-7-sonnet-20250219"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:border-sky-400"
+                />
+              ) : (
+                <select
+                  value={config.anthropic_model || "claude-3-5-sonnet-20241022"}
+                  onChange={(e) => onChange("anthropic_model", e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
+                >
+                  {ANTHROPIC_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.desc}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}
@@ -512,20 +599,39 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-100 mb-1.5 uppercase">
-                Groq Model Selection
-              </label>
-              <select
-                value={config.openai_model || "llama-3.3-70b-versatile"}
-                onChange={(e) => onChange("openai_model", e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
-              >
-                {GROQ_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — {m.desc}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-bold text-slate-100 uppercase">
+                  Groq Model Selection
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomGroqInput(!customGroqInput)}
+                  className="text-[11px] text-orange-400 hover:text-orange-300 font-semibold"
+                >
+                  {customGroqInput ? "Choose from list" : "Type custom model tag"}
+                </button>
+              </div>
+              {customGroqInput ? (
+                <input
+                  type="text"
+                  value={config.openai_model || ""}
+                  onChange={(e) => onChange("openai_model", e.target.value)}
+                  placeholder="e.g. llama-3.3-70b-versatile, deepseek-r1-distill-llama-70b"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:border-sky-400"
+                />
+              ) : (
+                <select
+                  value={config.openai_model || "llama-3.3-70b-versatile"}
+                  onChange={(e) => onChange("openai_model", e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
+                >
+                  {GROQ_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.desc}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}
