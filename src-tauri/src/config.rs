@@ -16,10 +16,28 @@ fn default_auto_language() -> String {
     "auto".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_auto_trigger_delay() -> u64 {
+    1500
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_live_ocr_interval() -> u64 {
+    10
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     // Window & Stealth
     pub anti_capture_enabled: bool,
+    #[serde(default = "default_true")]
+    pub focus_shield_enabled: bool,
     pub opacity: f64,
     pub click_through: bool,
     pub always_on_top: bool,
@@ -78,13 +96,24 @@ pub struct AppConfig {
     pub project_context: String,
     pub system_prompt_override: String,
     pub auto_trigger_enabled: bool,
+    #[serde(default = "default_auto_trigger_delay")]
+    pub auto_trigger_delay_ms: u64,
+    #[serde(default = "default_false")]
+    pub live_ocr_enabled: bool,
+    #[serde(default = "default_live_ocr_interval")]
+    pub live_ocr_interval_secs: u64,
+    #[serde(default = "default_true")]
+    pub live_ocr_smart_diff: bool,
     pub max_context_turns: usize,
+    #[serde(default = "default_true")]
+    pub smart_model_routing: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         let mut config = Self {
             anti_capture_enabled: true,
+            focus_shield_enabled: true,
             opacity: 0.92,
             click_through: false,
             always_on_top: true,
@@ -112,9 +141,9 @@ impl Default for AppConfig {
             gemini_api_key: "".to_string(),
             gemini_model: "gemini-2.5-flash".to_string(),
             ollama_endpoint: "http://localhost:11434".to_string(),
-            ollama_model: "llama3.2".to_string(),
+            ollama_model: "qwen2.5-coder:7b".to_string(),
             openai_api_key: "".to_string(),
-            openai_model: "gpt-4o-mini".to_string(),
+            openai_model: "gpt-4o".to_string(),
             openai_base_url: "https://api.openai.com/v1".to_string(),
             anthropic_api_key: "".to_string(),
             anthropic_model: "claude-3-5-sonnet-20241022".to_string(),
@@ -132,7 +161,12 @@ impl Default for AppConfig {
             project_context: "".to_string(),
             system_prompt_override: "".to_string(),
             auto_trigger_enabled: true,
+            auto_trigger_delay_ms: 1500,
+            live_ocr_enabled: false,
+            live_ocr_interval_secs: 10,
+            live_ocr_smart_diff: true,
             max_context_turns: 10,
+            smart_model_routing: true,
         };
 
         Self::apply_env_overrides(&mut config);
@@ -141,7 +175,8 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// Load .env file and apply any environment variables to config dynamically
+    /// Apply environment variables from .env as fallbacks for any missing/empty settings,
+    /// without overwriting user-configured values.
     pub fn apply_env_overrides(config: &mut AppConfig) {
         // Try multiple standard locations for .env
         let _ = dotenvy::dotenv();
@@ -175,122 +210,270 @@ impl AppConfig {
             }
         }
 
-        if let Ok(val) = env::var("GEMINI_API_KEY") {
-            if !val.trim().is_empty() {
-                config.gemini_api_key = val.trim().to_string();
+        // Only populate API keys and endpoints if currently empty in config
+        if config.gemini_api_key.is_empty() {
+            if let Ok(val) = env::var("GEMINI_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.gemini_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.gemini_model.is_empty() {
+            if let Ok(val) = env::var("GEMINI_MODEL") {
+                if !val.trim().is_empty() {
+                    config.gemini_model = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.openai_api_key.is_empty() {
+            if let Ok(val) = env::var("OPENAI_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.openai_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.openai_model.is_empty() {
+            if let Ok(val) = env::var("OPENAI_MODEL") {
+                if !val.trim().is_empty() {
+                    config.openai_model = val.trim().to_string();
+                }
+            }
+        }
+        if config.openai_base_url.is_empty() {
+            if let Ok(val) = env::var("OPENAI_BASE_URL") {
+                if !val.trim().is_empty() {
+                    config.openai_base_url = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.anthropic_api_key.is_empty() {
+            if let Ok(val) = env::var("ANTHROPIC_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.anthropic_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.anthropic_model.is_empty() {
+            if let Ok(val) = env::var("ANTHROPIC_MODEL") {
+                if !val.trim().is_empty() {
+                    config.anthropic_model = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.deepgram_api_key.is_empty() {
+            if let Ok(val) = env::var("DEEPGRAM_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.deepgram_api_key = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.ollama_endpoint.is_empty() {
+            if let Ok(val) = env::var("OLLAMA_ENDPOINT") {
+                if !val.trim().is_empty() {
+                    config.ollama_endpoint = val.trim().to_string();
+                }
+            }
+        }
+        if config.ollama_model.is_empty() {
+            if let Ok(val) = env::var("OLLAMA_MODEL") {
+                if !val.trim().is_empty() {
+                    config.ollama_model = val.trim().to_string();
+                }
+            }
+        }
+
+        // Only choose initial LLM provider if config does not already have a valid provider selected
+        if config.llm_provider.is_empty() {
+            if let Ok(val) = env::var("LLM_PROVIDER") {
+                let trimmed = val.trim().to_lowercase();
+                if !trimmed.is_empty() {
+                    config.llm_provider = trimmed;
+                }
+            } else if !config.gemini_api_key.is_empty() {
+                config.llm_provider = "gemini".to_string();
+            } else if !config.openai_api_key.is_empty() {
+                config.llm_provider = "openai".to_string();
+            } else if !config.anthropic_api_key.is_empty() {
+                config.llm_provider = "anthropic".to_string();
+            } else {
                 config.llm_provider = "gemini".to_string();
             }
         }
-        if let Ok(val) = env::var("GEMINI_MODEL") {
-            if !val.trim().is_empty() {
-                config.gemini_model = val.trim().to_string();
-            }
-        }
 
-        if let Ok(val) = env::var("OPENAI_API_KEY") {
-            if !val.trim().is_empty() {
-                config.openai_api_key = val.trim().to_string();
-                if config.llm_provider.is_empty() || config.llm_provider == "ollama" {
-                    config.llm_provider = "openai".to_string();
-                }
-                if config.stt_provider.is_empty() || config.stt_provider == "local_whisper" {
-                    config.stt_provider = "cloud_whisper".to_string();
+        // Only choose initial STT provider if config does not already have one
+        if config.stt_provider.is_empty() {
+            if let Ok(val) = env::var("STT_PROVIDER") {
+                let trimmed = val.trim().to_lowercase();
+                if !trimmed.is_empty() {
+                    config.stt_provider = trimmed;
                 }
             }
         }
-        if let Ok(val) = env::var("OPENAI_MODEL") {
-            if !val.trim().is_empty() {
-                config.openai_model = val.trim().to_string();
+
+        if config.auto_trigger_delay_ms == 0 {
+            if let Ok(val) = env::var("AUTO_TRIGGER_DELAY_MS") {
+                if let Ok(parsed) = val.trim().parse::<u64>() {
+                    config.auto_trigger_delay_ms = parsed;
+                }
             }
-        }
-        if let Ok(val) = env::var("OPENAI_BASE_URL") {
-            if !val.trim().is_empty() {
-                config.openai_base_url = val.trim().to_string();
+            if config.auto_trigger_delay_ms == 0 {
+                config.auto_trigger_delay_ms = 1500;
             }
         }
 
-        if let Ok(val) = env::var("ANTHROPIC_API_KEY") {
-            if !val.trim().is_empty() {
-                config.anthropic_api_key = val.trim().to_string();
-                config.llm_provider = "anthropic".to_string();
+        if config.live_ocr_interval_secs == 0 {
+            if let Ok(val) = env::var("LIVE_OCR_INTERVAL_SECS") {
+                if let Ok(parsed) = val.trim().parse::<u64>() {
+                    config.live_ocr_interval_secs = parsed;
+                }
             }
-        }
-        if let Ok(val) = env::var("ANTHROPIC_MODEL") {
-            if !val.trim().is_empty() {
-                config.anthropic_model = val.trim().to_string();
-            }
-        }
-
-        if let Ok(val) = env::var("GROQ_API_KEY") {
-            if !val.trim().is_empty() {
-                config.openai_api_key = val.trim().to_string();
-                config.llm_provider = "groq".to_string();
+            if config.live_ocr_interval_secs == 0 {
+                config.live_ocr_interval_secs = 10;
             }
         }
 
-        if let Ok(val) = env::var("DEEPGRAM_API_KEY") {
-            if !val.trim().is_empty() {
-                config.deepgram_api_key = val.trim().to_string();
-                config.stt_provider = "deepgram".to_string();
+        if config.target_role.is_empty() {
+            if let Ok(val) = env::var("TARGET_ROLE") {
+                if !val.trim().is_empty() {
+                    config.target_role = val.trim().to_string();
+                }
             }
+        }
+        if config.job_description.is_empty() {
+            if let Ok(val) = env::var("JOB_DESCRIPTION") {
+                if !val.trim().is_empty() {
+                    config.job_description = val.trim().to_string();
+                }
+            }
+        }
+        if config.candidate_resume.is_empty() {
+            if let Ok(val) = env::var("CANDIDATE_RESUME") {
+                if !val.trim().is_empty() {
+                    config.candidate_resume = val.trim().to_string();
+                }
+            }
+        }
+        if config.system_prompt_override.is_empty() {
+            if let Ok(val) = env::var("SYSTEM_PROMPT_OVERRIDE") {
+                if !val.trim().is_empty() {
+                    config.system_prompt_override = val.trim().to_string();
+                }
+            }
+        }
+        if config.ui_language.is_empty() {
+            if let Ok(val) = env::var("UI_LANGUAGE") {
+                if !val.trim().is_empty() {
+                    config.ui_language = val.trim().to_string();
+                }
+            }
+        }
+        if config.stt_language.is_empty() {
+            if let Ok(val) = env::var("STT_LANGUAGE") {
+                if !val.trim().is_empty() {
+                    config.stt_language = val.trim().to_string();
+                }
+            }
+        }
+        if config.response_language.is_empty() {
+            if let Ok(val) = env::var("RESPONSE_LANGUAGE") {
+                if !val.trim().is_empty() {
+                    config.response_language = val.trim().to_string();
+                }
+            }
+        }
+        if let Ok(val) = env::var("SMART_MODEL_ROUTING") {
+            config.smart_model_routing = val.trim().eq_ignore_ascii_case("true") || val.trim() == "1";
+        }
+    }
+
+    /// Returns the active model name, optionally routing based on task type.
+    pub fn get_effective_model(&self, action_name: &str) -> String {
+        let is_complex_task = action_name == "code" || action_name == "vision" || action_name == "screen";
+
+        if !self.smart_model_routing {
+            return match self.llm_provider.as_str() {
+                "gemini" => if self.gemini_model.is_empty() { "gemini-2.5-flash".to_string() } else { self.gemini_model.clone() },
+                "ollama" => if self.ollama_model.is_empty() { "qwen2.5-coder:7b".to_string() } else { self.ollama_model.clone() },
+                "openai" => if self.openai_model.is_empty() { "gpt-4o".to_string() } else { self.openai_model.clone() },
+                "anthropic" => if self.anthropic_model.is_empty() { "claude-3-5-sonnet-20241022".to_string() } else { self.anthropic_model.clone() },
+                "groq" => if self.openai_model.is_empty() { "llama-3.3-70b-versatile".to_string() } else { self.openai_model.clone() },
+                _ => self.custom_model.clone(),
+            };
         }
 
-        if let Ok(val) = env::var("OLLAMA_ENDPOINT") {
-            if !val.trim().is_empty() {
-                config.ollama_endpoint = val.trim().to_string();
+        match self.llm_provider.as_str() {
+            "openai" => {
+                if is_complex_task {
+                    if self.openai_model.is_empty() || self.openai_model == "gpt-4o-mini" || self.openai_model == "gpt-3.5-turbo" {
+                        "gpt-4o".to_string()
+                    } else {
+                        self.openai_model.clone()
+                    }
+                } else {
+                    if self.openai_model.is_empty() {
+                        "gpt-4o-mini".to_string()
+                    } else {
+                        self.openai_model.clone()
+                    }
+                }
             }
-        }
-        if let Ok(val) = env::var("OLLAMA_MODEL") {
-            if !val.trim().is_empty() {
-                config.ollama_model = val.trim().to_string();
+            "anthropic" => {
+                if is_complex_task {
+                    if self.anthropic_model.is_empty() || self.anthropic_model.contains("haiku") {
+                        "claude-3-5-sonnet-20241022".to_string()
+                    } else {
+                        self.anthropic_model.clone()
+                    }
+                } else {
+                    if self.anthropic_model.is_empty() {
+                        "claude-3-5-haiku-20241022".to_string()
+                    } else {
+                        self.anthropic_model.clone()
+                    }
+                }
             }
-        }
-
-        if let Ok(val) = env::var("LLM_PROVIDER") {
-            if !val.trim().is_empty() {
-                config.llm_provider = val.trim().to_lowercase();
+            "gemini" => {
+                if is_complex_task {
+                    if self.gemini_model.is_empty() || self.gemini_model == "gemini-1.5-flash" {
+                        "gemini-2.5-pro".to_string()
+                    } else {
+                        self.gemini_model.clone()
+                    }
+                } else {
+                    if self.gemini_model.is_empty() {
+                        "gemini-2.5-flash".to_string()
+                    } else {
+                        self.gemini_model.clone()
+                    }
+                }
             }
-        }
-        if let Ok(val) = env::var("STT_PROVIDER") {
-            if !val.trim().is_empty() {
-                config.stt_provider = val.trim().to_lowercase();
+            "groq" => {
+                if is_complex_task {
+                    "llama-3.3-70b-versatile".to_string()
+                } else {
+                    "llama-3.1-8b-instant".to_string()
+                }
             }
-        }
-
-        if let Ok(val) = env::var("TARGET_ROLE") {
-            if !val.trim().is_empty() {
-                config.target_role = val.trim().to_string();
+            "ollama" => {
+                if is_complex_task {
+                    if self.ollama_model.is_empty() || self.ollama_model.contains("llama3.2") {
+                        "qwen2.5-coder:7b".to_string()
+                    } else {
+                        self.ollama_model.clone()
+                    }
+                } else {
+                    if self.ollama_model.is_empty() {
+                        "llama3.1:8b".to_string()
+                    } else {
+                        self.ollama_model.clone()
+                    }
+                }
             }
-        }
-        if let Ok(val) = env::var("JOB_DESCRIPTION") {
-            if !val.trim().is_empty() {
-                config.job_description = val.trim().to_string();
-            }
-        }
-        if let Ok(val) = env::var("CANDIDATE_RESUME") {
-            if !val.trim().is_empty() {
-                config.candidate_resume = val.trim().to_string();
-            }
-        }
-        if let Ok(val) = env::var("SYSTEM_PROMPT_OVERRIDE") {
-            if !val.trim().is_empty() {
-                config.system_prompt_override = val.trim().to_string();
-            }
-        }
-        if let Ok(val) = env::var("UI_LANGUAGE") {
-            if !val.trim().is_empty() {
-                config.ui_language = val.trim().to_string();
-            }
-        }
-        if let Ok(val) = env::var("STT_LANGUAGE") {
-            if !val.trim().is_empty() {
-                config.stt_language = val.trim().to_string();
-            }
-        }
-        if let Ok(val) = env::var("RESPONSE_LANGUAGE") {
-            if !val.trim().is_empty() {
-                config.response_language = val.trim().to_string();
-            }
+            _ => self.custom_model.clone(),
         }
     }
 }
@@ -303,9 +486,14 @@ pub struct ConfigManager {
 impl ConfigManager {
     pub fn new(app_dir: PathBuf) -> Self {
         let config_path = app_dir.join("ghostcue_config.json");
-        let mut initial_config = Self::load_from_disk(&config_path).unwrap_or_default();
-        
-        AppConfig::apply_env_overrides(&mut initial_config);
+        let initial_config = Self::load_from_disk(&config_path).unwrap_or_else(|| {
+            let mut cfg = AppConfig::default();
+            AppConfig::apply_env_overrides(&mut cfg);
+            cfg
+        });
+
+        // Ensure runtime environment matches active config
+        std::env::set_var("LLM_PROVIDER", &initial_config.llm_provider);
 
         Self {
             config: Arc::new(RwLock::new(initial_config)),
@@ -314,17 +502,60 @@ impl ConfigManager {
     }
 
     pub fn get_config(&self) -> AppConfig {
-        let mut cfg = self.config.read().clone();
-        AppConfig::apply_env_overrides(&mut cfg);
-        cfg
+        self.config.read().clone()
     }
 
     pub fn update_config(&self, new_config: AppConfig) -> Result<(), String> {
+        info!("Updating GhostCue config: provider='{}', model='{}', delay={}ms",
+            new_config.llm_provider,
+            new_config.get_effective_model("hint"),
+            new_config.auto_trigger_delay_ms
+        );
         {
             let mut write_guard = self.config.write();
             *write_guard = new_config.clone();
         }
-        self.save_to_disk(&new_config)
+        self.save_to_disk(&new_config)?;
+        std::env::set_var("LLM_PROVIDER", &new_config.llm_provider);
+        Self::sync_to_dotenv(&new_config);
+        Ok(())
+    }
+
+    fn sync_to_dotenv(config: &AppConfig) {
+        let env_paths = vec![
+            PathBuf::from(".env"),
+            PathBuf::from("../.env"),
+            std::env::current_dir().unwrap_or_default().join(".env"),
+        ];
+
+        for path in env_paths {
+            if path.exists() {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    let mut updated = false;
+                    let new_lines: Vec<String> = content
+                        .lines()
+                        .map(|line| {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("LLM_PROVIDER=") || trimmed.starts_with("LLM_PROVIDER =") {
+                                updated = true;
+                                format!("LLM_PROVIDER={}", config.llm_provider)
+                            } else {
+                                line.to_string()
+                            }
+                        })
+                        .collect();
+
+                    if updated {
+                        let mut final_content = new_lines.join("\r\n");
+                        if !final_content.ends_with("\r\n") {
+                            final_content.push_str("\r\n");
+                        }
+                        let _ = fs::write(&path, final_content);
+                        info!("Synced LLM_PROVIDER='{}' to {:?}", config.llm_provider, path);
+                    }
+                }
+            }
+        }
     }
 
     fn load_from_disk(path: &PathBuf) -> Option<AppConfig> {
@@ -334,7 +565,7 @@ impl ConfigManager {
         match fs::read_to_string(path) {
             Ok(content) => match serde_json::from_str::<AppConfig>(&content) {
                 Ok(mut cfg) => {
-                    info!("Loaded GhostCue configuration from {:?}", path);
+                    info!("Loaded GhostCue configuration from {:?}, active provider: '{}'", path, cfg.llm_provider);
                     AppConfig::apply_env_overrides(&mut cfg);
                     Some(cfg)
                 }

@@ -78,7 +78,7 @@ impl SttEngineManager {
                 0.0
             };
 
-            // Only skip if practically silent (< 0.0018 RMS) or completely empty (< 0.18s)
+            // Skip frames below silence or minimum duration threshold
             if duration_secs < 0.18 || rms_energy < 0.0018 {
                 continue;
             }
@@ -91,7 +91,7 @@ impl SttEngineManager {
                 rms_energy
             );
 
-            // Execute transcription via selected STT provider
+            // Run transcription with configured STT provider
             let transcript_result = if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
                 let deepgram = DeepgramClient::new(config.deepgram_api_key.clone());
                 deepgram.transcribe_buffer(&segment.samples, &config.stt_language).await
@@ -128,7 +128,7 @@ impl SttEngineManager {
                                 || prev_text.ends_with('!');
                             let continues_thought = prev_text.ends_with(',') || prev_text.ends_with("...") || prev_text.ends_with('-');
                             
-                            // Merge consecutive speech from the same speaker to prevent sentence fragmentation
+                            // Merge consecutive speech segments from the same speaker
                             !ends_with_terminal || continues_thought || (segment.speaker_is_interviewer && duration_secs < 14.0)
                         } else {
                             false

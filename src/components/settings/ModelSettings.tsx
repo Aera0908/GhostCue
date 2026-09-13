@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Cpu, Cloud, Download, CheckCircle, Key, Server, Globe, CheckSquare, Square, Sparkles } from "lucide-react";
+import { Cpu, Cloud, Download, CheckCircle, Key, Server, Globe, CheckSquare, Square, Sparkles, Zap } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { TauriApi } from "../../services/tauriApi";
 import { useTranslation } from "../../i18n";
@@ -16,27 +16,37 @@ interface WhisperModelInfo {
 }
 
 const GEMINI_MODELS = [
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", desc: "Recommended • Ultra-fast, highly accurate reasoning" },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", desc: "Default • Ultra-fast, highly accurate reasoning" },
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", desc: "Complex system design & deep algorithmic logic" },
-  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", desc: "Sub-second low latency inference" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", desc: "Deep codebase analysis & long context" },
+  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", desc: "Sub-second low latency multimodal inference" },
+  { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite", desc: "Cost-efficient high-speed inference" },
+  { id: "gemini-2.0-pro-exp-02-05", name: "Gemini 2.0 Pro Exp", desc: "Advanced coding & complex logic reasoning" },
+  { id: "gemini-2.0-flash-thinking-exp-01-21", name: "Gemini 2.0 Flash Thinking", desc: "Chain-of-thought reasoning" },
+  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", desc: "Deep codebase analysis & 2M context" },
   { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", desc: "Lightweight & responsive" },
+  { id: "gemini-1.5-flash-8b", name: "Gemini 1.5 Flash 8B", desc: "High throughput small model" },
 ];
 
 const OPENAI_MODELS = [
-  { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Recommended • Ultra-fast, economical & smart" },
-  { id: "gpt-4o", name: "GPT-4o", desc: "Flagship multimodal intelligence" },
-  { id: "o3-mini", name: "o3-mini", desc: "Fast reasoning & STEM/coding specialist" },
+  { id: "gpt-4o", name: "GPT-4o", desc: "Default • Flagship multimodal intelligence & code" },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Ultra-fast, economical & smart" },
+  { id: "o3-mini", name: "o3-mini", desc: "Advanced reasoning for competitive coding & STEM" },
   { id: "o1", name: "o1", desc: "Deep complex reasoning & algorithmic analysis" },
-  { id: "gpt-4-turbo", name: "GPT-4 Turbo", desc: "High capability broad knowledge" },
+  { id: "o1-mini", name: "o1-mini", desc: "Fast STEM & coding reasoning specialist" },
+  { id: "o1-preview", name: "o1-preview", desc: "High-capacity multi-step reasoning" },
+  { id: "chatgpt-4o-latest", name: "ChatGPT-4o Latest", desc: "Dynamic continuous ChatGPT model" },
+  { id: "gpt-4-turbo", name: "GPT-4 Turbo", desc: "High capability broad knowledge & vision" },
+  { id: "gpt-4", name: "GPT-4", desc: "Standard GPT-4 foundation model" },
   { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", desc: "Legacy fast model" },
 ];
 
 const ANTHROPIC_MODELS = [
-  { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", desc: "Recommended • Latest hybrid reasoning flagship" },
-  { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", desc: "Industry-leading software engineering & coding" },
+  { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", desc: "Default • Industry-leading software engineering & code" },
+  { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", desc: "Latest hybrid reasoning flagship" },
   { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", desc: "Ultra-fast latency & crisp answers" },
   { id: "claude-3-opus-20240229", name: "Claude 3 Opus", desc: "Deep analytical synthesis" },
+  { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", desc: "Legacy balanced model" },
+  { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku", desc: "Legacy fast model" },
 ];
 
 const GROQ_MODELS = [
@@ -48,10 +58,14 @@ const GROQ_MODELS = [
 ];
 
 const OLLAMA_MODELS = [
-  { id: "llama3.2", name: "Llama 3.2 (3B)", desc: "Default • Lightweight & fast on local CPU/GPU" },
-  { id: "llama3.1", name: "Llama 3.1 (8B)", desc: "Balanced local performance" },
+  { id: "qwen2.5-coder:7b", name: "Qwen 2.5 Coder (7B)", desc: "Default • Optimized for programming & architecture" },
+  { id: "llama3.1:8b", name: "Llama 3.1 (8B)", desc: "Balanced local performance & conversation" },
+  { id: "qwen2.5:7b", name: "Qwen 2.5 (7B)", desc: "General instruction & technical tasks" },
+  { id: "llama3:latest", name: "Llama 3 (8B)", desc: "Standard Meta Llama 3 model" },
+  { id: "phi3:mini", name: "Microsoft Phi-3 Mini (3.8B)", desc: "Compact & efficient on CPU" },
+  { id: "llama3.2", name: "Llama 3.2 (3B)", desc: "Lightweight & fast on local CPU/GPU" },
   { id: "deepseek-r1:8b", name: "DeepSeek R1 (8B)", desc: "Local chain-of-thought reasoning" },
-  { id: "qwen2.5-coder:7b", name: "Qwen 2.5 Coder (7B)", desc: "Optimized for programming & architecture" },
+  { id: "deepseek-r1:14b", name: "DeepSeek R1 (14B)", desc: "Enhanced local reasoning capacity" },
   { id: "mistral", name: "Mistral (7B)", desc: "General technical Q&A" },
   { id: "phi4", name: "Microsoft Phi-4 (14B)", desc: "High reasoning capacity" },
   { id: "gemma2", name: "Google Gemma 2 (9B)", desc: "Fast Google local model" },
@@ -340,6 +354,40 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           })}
         </div>
 
+        {/* Smart Model Routing (Cost & Accuracy Optimizer) */}
+        <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <div>
+                <p className="font-bold text-slate-100 uppercase">Smart Model Routing (Cost & Accuracy Optimizer)</p>
+                <p className="text-[11px] text-slate-400">
+                  Flagship model for Coding & Screen OCR • Budget model for Answers & Chat
+                </p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={config.smart_model_routing ?? true}
+              onChange={(e) => onChange("smart_model_routing", e.target.checked)}
+              className="w-4 h-4 accent-amber-500 cursor-pointer"
+            />
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed pt-1">
+            Automatically routes complex <strong className="text-amber-300">Coding Problems</strong> and <strong className="text-amber-300">Screen OCR</strong> to high-accuracy flagship models (<code className="text-amber-300 font-mono">gpt-4o</code> / <code className="text-amber-300 font-mono">claude-3-7-sonnet</code> / <code className="text-amber-300 font-mono">gemini-2.5-pro</code>), while essays, paragraphs, summaries, and conversational STAR answers use fast, budget models (<code className="text-amber-300 font-mono">gpt-4o-mini</code> / <code className="text-amber-300 font-mono">claude-3-5-haiku</code> / <code className="text-amber-300 font-mono">gemini-2.5-flash</code>) to save up to 95% in token costs.
+          </p>
+          <div className="flex items-center gap-3 pt-1 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              Saves ~95% API costs on chat & essays
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+              Competitive programming accuracy for code & vision
+            </span>
+          </div>
+        </div>
+
         {/* Google Gemini Settings */}
         {config.llm_provider === "gemini" && (
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3">
@@ -398,7 +446,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 OpenAI Model Selection
               </label>
               <select
-                value={config.openai_model || "gpt-4o-mini"}
+                value={config.openai_model || "gpt-4o"}
                 onChange={(e) => onChange("openai_model", e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
               >
@@ -433,7 +481,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 Claude Model Selection
               </label>
               <select
-                value={config.anthropic_model || "claude-3-7-sonnet-20250219"}
+                value={config.anthropic_model || "claude-3-5-sonnet-20241022"}
                 onChange={(e) => onChange("anthropic_model", e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
               >
@@ -523,7 +571,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 />
               ) : (
                 <select
-                  value={config.ollama_model || "llama3.2"}
+                  value={config.ollama_model || "qwen2.5-coder:7b"}
                   onChange={(e) => onChange("ollama_model", e.target.value)}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-sky-400 cursor-pointer"
                 >

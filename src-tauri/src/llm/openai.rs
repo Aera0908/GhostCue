@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter};
 #[derive(Serialize)]
 struct ChatMessage {
     role: String,
-    content: String,
+    content: serde_json::Value,
 }
 
 #[derive(Serialize)]
@@ -18,8 +18,12 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -53,7 +57,10 @@ impl OpenAiClient {
             base_url: clean_base,
             api_key,
             model,
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
@@ -62,6 +69,7 @@ impl OpenAiClient {
         app_handle: AppHandle,
         system_prompt: String,
         user_prompt: String,
+        image_data: Option<String>,
         abort_flag: Arc<AtomicBool>,
     ) -> Result<String, String> {
         let url = if self.base_url.ends_with("/chat/completions") {
@@ -82,24 +90,65 @@ impl OpenAiClient {
         );
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
+        let has_image = image_data.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+
+        // o1-mini and o3-mini are text-only; route vision requests to gpt-4o automatically so they never fail
+        let effective_model = if (self.model.starts_with("o1-mini") || self.model.starts_with("o3-mini")) && has_image {
+            info!("Model {} is text-only. Routing screen vision request to gpt-4o", self.model);
+            "gpt-4o".to_string()
+        } else {
+            self.model.clone()
+        };
+
+        let is_reasoning = effective_model.starts_with("o1") || effective_model.starts_with("o3");
+        let (max_tokens, max_completion_tokens, temperature) = if is_reasoning {
+            (None, Some(4096), None) // Reasoning models reject temperature and require max_completion_tokens
+        } else {
+            (Some(4096), None, Some(0.2)) // Low temperature for high-precision, bug-free coding
+        };
+
+        let system_role = if is_reasoning { "developer" } else { "system" };
+
+        let user_content = if let Some(img_b64) = image_data {
+            if !img_b64.trim().is_empty() {
+                serde_json::json!([
+                    {
+                        "type": "text",
+                        "text": user_prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:image/jpeg;base64,{}", img_b64.trim())
+                        }
+                    }
+                ])
+            } else {
+                serde_json::Value::String(user_prompt)
+            }
+        } else {
+            serde_json::Value::String(user_prompt)
+        };
+
         let body = ChatCompletionRequest {
-            model: self.model.clone(),
+            model: effective_model.clone(),
             messages: vec![
                 ChatMessage {
-                    role: "system".to_string(),
-                    content: system_prompt,
+                    role: system_role.to_string(),
+                    content: serde_json::Value::String(system_prompt),
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: user_prompt,
+                    content: user_content,
                 },
             ],
             stream: true,
-            max_tokens: Some(600),
-            temperature: 0.3,
+            max_tokens,
+            max_completion_tokens,
+            temperature,
         };
 
-        info!("Sending streaming chat completion to {} (model: {})", url, self.model);
+        info!("Sending streaming chat completion to {} (model: {})", url, effective_model);
 
         let response = self
             .client
@@ -113,6 +162,7 @@ impl OpenAiClient {
         if !response.status().is_success() {
             let status = response.status();
             let err_text = response.text().await.unwrap_or_default();
+            log::warn!("OpenAI API error status {}: {}", status, err_text);
             return Err(format!("API returned error status {}: {}", status, err_text));
         }
 
@@ -133,11 +183,15 @@ impl OpenAiClient {
                 let line: String = buffer.drain(..=newline_pos).collect();
                 let trimmed = line.trim();
 
-                if trimmed.is_empty() || trimmed == "data: [DONE]" {
+                if trimmed.is_empty() {
                     continue;
                 }
 
-                if let Some(json_payload) = trimmed.strip_prefix("data: ") {
+                if let Some(json_payload) = trimmed.strip_prefix("data:").map(|s| s.trim()) {
+                    if json_payload == "[DONE]" {
+                        continue;
+                    }
+
                     if let Ok(parsed) = serde_json::from_str::<StreamChunk>(json_payload) {
                         if let Some(choices) = parsed.choices {
                             for choice in choices {

@@ -300,18 +300,32 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
         )}
 
         {/* Add Folder Bar */}
-        <div className="flex flex-col sm:flex-row items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSelectFolderDialog}
-            disabled={isScanningDir}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-lg border border-slate-700 transition-colors shadow-sm shrink-0 focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
-            <span>+ Add Folder</span>
-          </button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSelectFolderDialog}
+              disabled={isScanningDir}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-lg border border-slate-700 transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-sky-400"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
+              <span>+ Add Folder</span>
+            </button>
 
-          <div className="flex items-center gap-1.5 w-full flex-1">
+            {projectDirs.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleScanAllFolders()}
+                disabled={isScanningDir}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-950/60 border border-sky-500/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold rounded-lg transition-colors"
+              >
+                <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin" : ""}`} />
+                <span>Re-scan All ({projectDirs.length})</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 w-full">
             <input
               type="text"
               value={manualFolderInput}
@@ -323,7 +337,7 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
                 }
               }}
               placeholder="Or enter path (e.g. g:/Project/my-repo)..."
-              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
+              className="flex-1 min-w-0 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
             />
 
             <button
@@ -335,18 +349,6 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
               <span>Add</span>
             </button>
           </div>
-
-          {projectDirs.length > 1 && (
-            <button
-              type="button"
-              onClick={() => handleScanAllFolders()}
-              disabled={isScanningDir}
-              className="w-full sm:w-auto flex items-center justify-center gap-1 px-3 py-2 bg-sky-950/60 border border-sky-500/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold rounded-lg transition-colors shrink-0"
-            >
-              <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin" : ""}`} />
-              <span>Re-scan All ({projectDirs.length})</span>
-            </button>
-          )}
         </div>
 
         {scanStatus && (

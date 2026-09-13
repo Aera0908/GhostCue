@@ -34,29 +34,32 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
     <div
       role="region"
       aria-label="Audio stream activity and levels"
-      className={`flex items-center gap-4 px-3.5 py-1.5 border-b text-xs select-none font-sans transition-colors ${
+      className={`flex items-center gap-2.5 px-2.5 py-1 border-b text-xs select-none font-sans transition-colors ${
         isPaused ? "bg-amber-950/40 border-amber-900/50" : "bg-slate-900/90 border-slate-800"
       }`}
     >
       {isPaused && (
-        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded font-bold text-[10px] tracking-wider uppercase shrink-0">
-          Audio & AI Paused
+        <span
+          title="Audio listening and AI suggestions are paused (Ctrl+Shift+P to resume)"
+          className="px-1.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded font-bold text-[9px] tracking-wider uppercase shrink-0"
+        >
+          Paused
         </span>
       )}
       {/* Interviewer Loopback Stream */}
-      <div className="flex-1 flex items-center gap-2.5">
+      <div className="flex-1 flex items-center gap-2 min-w-0">
         <button
           type="button"
           onClick={onToggleLoopbackMute}
           aria-label={loopbackMuted ? t.header.sysMuted : t.header.sysLive}
-          className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium min-w-[95px] text-left transition-colors focus-visible:ring-1 focus-visible:ring-sky-400 rounded"
+          className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium text-left transition-colors focus-visible:ring-1 focus-visible:ring-sky-400 rounded shrink-0"
         >
           {loopbackMuted ? (
             <VolumeX className="w-3.5 h-3.5 text-rose-400" />
           ) : (
             <Volume2 className={`w-3.5 h-3.5 transition-colors ${loopbackActive ? "text-sky-400 animate-pulse" : "text-slate-400"}`} />
           )}
-          <span className={loopbackMuted ? "text-rose-400 line-through" : loopbackActive ? "text-sky-300 font-bold" : "text-slate-200"}>
+          <span className={`text-xs truncate max-w-[80px] ${loopbackMuted ? "text-rose-400 line-through" : loopbackActive ? "text-sky-300 font-bold" : "text-slate-200"}`}>
             {t.transcript.speakerInterviewer}
           </span>
         </button>
@@ -99,19 +102,19 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
       <div className="h-3 w-[1px] bg-slate-700" />
 
       {/* Candidate Microphone Stream */}
-      <div className="flex-1 flex items-center gap-2.5">
+      <div className="flex-1 flex items-center gap-2 min-w-0">
         <button
           type="button"
           onClick={onToggleMicMute}
           aria-label={micMuted ? t.header.micMuted : t.header.micLive}
-          className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium min-w-[55px] text-left transition-colors focus-visible:ring-1 focus-visible:ring-sky-400 rounded"
+          className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium text-left transition-colors focus-visible:ring-1 focus-visible:ring-sky-400 rounded shrink-0"
         >
           {micMuted ? (
             <MicOff className="w-3.5 h-3.5 text-rose-400" />
           ) : (
             <Mic className={`w-3.5 h-3.5 transition-colors ${micActive ? "text-emerald-400 animate-pulse" : "text-slate-400"}`} />
           )}
-          <span className={micMuted ? "text-rose-400 line-through" : micActive ? "text-emerald-300 font-bold" : "text-slate-200"}>
+          <span className={`text-xs truncate max-w-[70px] ${micMuted ? "text-rose-400 line-through" : micActive ? "text-emerald-300 font-bold" : "text-slate-200"}`}>
             {t.transcript.speakerCandidate.split(" ")[0]}
           </span>
         </button>

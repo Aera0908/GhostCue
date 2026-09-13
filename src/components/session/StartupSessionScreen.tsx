@@ -513,7 +513,7 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
         </div>
 
         {/* Right Column: Setup & Launch Form */}
-        <div className="md:col-span-8 flex flex-col bg-slate-950 overflow-y-auto p-6 scrollbar-thin">
+        <div className="md:col-span-8 flex flex-col bg-slate-950 overflow-y-auto overflow-x-hidden p-6 scrollbar-thin">
           <div className="max-w-xl mx-auto w-full space-y-5">
             {/* Header */}
             <div className="space-y-1 pb-3 border-b border-slate-800">
@@ -733,7 +733,7 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                 )}
 
                 {/* Add Folder Actions */}
-                <div className="flex flex-col sm:flex-row items-center gap-2">
+                <div className="space-y-2">
                   <input
                     type="file"
                     ref={folderInputRef}
@@ -744,18 +744,32 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                     multiple
                     className="hidden"
                   />
-                  
-                  <button
-                    type="button"
-                    onClick={handleSelectFolderDialog}
-                    disabled={isScanningDir}
-                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-lg border border-slate-700 transition-colors shadow-sm shrink-0 focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
-                    <span>+ Add Project Folder</span>
-                  </button>
 
-                  <div className="flex items-center gap-1.5 w-full flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectFolderDialog}
+                      disabled={isScanningDir}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-lg border border-slate-700 transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-sky-400"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
+                      <span>+ Add Project Folder</span>
+                    </button>
+
+                    {projectDirectories.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleScanAllFolders()}
+                        disabled={isScanningDir}
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-950/60 border border-sky-500/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin" : ""}`} />
+                        <span>Re-scan All ({projectDirectories.length})</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 w-full">
                     <input
                       type="text"
                       value={manualFolderInput}
@@ -767,7 +781,7 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                         }
                       }}
                       placeholder="Or enter path (e.g. g:/Project/my-repo)..."
-                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
+                      className="flex-1 min-w-0 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
                     />
 
                     <button
@@ -779,18 +793,6 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
                       <span>Add</span>
                     </button>
                   </div>
-
-                  {projectDirectories.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleScanAllFolders()}
-                      disabled={isScanningDir}
-                      className="w-full sm:w-auto flex items-center justify-center gap-1 px-3 py-2 bg-sky-950/60 border border-sky-500/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold rounded-lg transition-colors shrink-0"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isScanningDir ? "animate-spin" : ""}`} />
-                      <span>Re-scan All ({projectDirectories.length})</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* Live Scan Status Banner */}

@@ -79,7 +79,7 @@ pub fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>, String> {
     Ok(cursor.into_inner())
 }
 
-/// Fast Cloud Whisper transcription via OpenAI or Groq (/v1/audio/transcriptions)
+/// Cloud Whisper transcription endpoint
 pub async fn transcribe_with_cloud_whisper(
     api_key: &str,
     base_url: &str,

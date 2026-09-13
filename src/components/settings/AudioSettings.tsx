@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Mic, Volume2, Sliders, Zap, RefreshCw, Play, CheckCircle2, AlertTriangle, HelpCircle } from "lucide-react";
+import { Mic, Volume2, Sliders, Zap, RefreshCw, Play, CheckCircle2, AlertTriangle, HelpCircle, Timer } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { AudioDeviceInfo } from "../../types/audio";
 import { TauriApi } from "../../services/tauriApi";
@@ -392,6 +392,36 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
             onChange={(e) => handleDeviceChange("auto_trigger_enabled", e.target.checked)}
             className="w-4 h-4 accent-sky-400 cursor-pointer"
           />
+        </div>
+
+        {/* Auto-Answer Conversational Pause Delay Slider */}
+        <div className={`space-y-2 p-3 bg-slate-950 border border-slate-800 rounded-lg transition-opacity ${!config.auto_trigger_enabled ? "opacity-60" : ""}`}>
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Timer className="w-4 h-4 text-amber-400" />
+              <label className="font-semibold text-slate-100">Auto-Answer Delay (Conversational Pause)</label>
+            </div>
+            <span className="font-mono text-amber-400 font-bold">
+              {((config.auto_trigger_delay_ms || 1500) / 1000).toFixed(1)}s ({config.auto_trigger_delay_ms || 1500}ms)
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-snug">
+            How long to wait after the interviewer stops talking before triggering the AI answer. Shorter = faster response; longer = avoids cutting off multi-sentence questions.
+          </p>
+          <input
+            type="range"
+            min="400"
+            max="4000"
+            step="100"
+            value={config.auto_trigger_delay_ms || 1500}
+            onChange={(e) => handleDeviceChange("auto_trigger_delay_ms", parseInt(e.target.value, 10))}
+            className="w-full h-2 bg-slate-900 accent-amber-400 rounded cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>Fast (0.4s)</span>
+            <span>Balanced (1.5s)</span>
+            <span>Patient (4.0s)</span>
+          </div>
         </div>
       </div>
     </div>

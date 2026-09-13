@@ -13,6 +13,7 @@ export const isTauri = (): boolean => {
 // Default fallback configuration for standalone / browser preview
 export const DEFAULT_CONFIG: AppConfig = {
   anti_capture_enabled: true,
+  focus_shield_enabled: true,
   opacity: 0.92,
   click_through: false,
   always_on_top: true,
@@ -35,9 +36,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   gemini_api_key: "",
   gemini_model: "gemini-2.5-flash",
   ollama_endpoint: "http://localhost:11434",
-  ollama_model: "llama3.2",
+  ollama_model: "qwen2.5-coder:7b",
   openai_api_key: "",
-  openai_model: "gpt-4o-mini",
+  openai_model: "gpt-4o",
   openai_base_url: "https://api.openai.com/v1",
   anthropic_api_key: "",
   anthropic_model: "claude-3-5-sonnet-20241022",
@@ -50,6 +51,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   project_directories: [],
   system_prompt_override: "",
   auto_trigger_enabled: true,
+  auto_trigger_delay_ms: 1500,
+  live_ocr_enabled: false,
+  live_ocr_interval_secs: 10,
+  live_ocr_smart_diff: true,
   max_context_turns: 10,
 };
 
@@ -58,6 +63,11 @@ export const TauriApi = {
   async setAntiCapture(enabled: boolean): Promise<boolean> {
     if (!isTauri()) return enabled;
     return await invoke<boolean>("set_anti_capture", { enabled });
+  },
+
+  async setFocusShield(enabled: boolean): Promise<boolean> {
+    if (!isTauri()) return enabled;
+    return await invoke<boolean>("set_focus_shield", { enabled });
   },
 
   async setClickThrough(enabled: boolean): Promise<boolean> {
@@ -175,11 +185,34 @@ export const TauriApi = {
     return await invoke<string>("download_model", { modelName });
   },
 
+  // Screen Capture & OCR
+  async captureScreenForOcr(): Promise<{ base64_image: string; width: number; height: number; format: string; screen_hash?: string; extracted_text?: string }> {
+    if (!isTauri()) {
+      return { base64_image: "", width: 1920, height: 1080, format: "image/jpeg", screen_hash: "0000000000000000", extracted_text: "" };
+    }
+    return await invoke<{ base64_image: string; width: number; height: number; format: string; screen_hash?: string; extracted_text?: string }>("capture_screen_for_ocr");
+  },
+
+  // Stealth Typer (simulates keyboard input)
+  async typeTextStealth(text: string, speedMs?: number): Promise<void> {
+    if (!isTauri()) {
+      console.log("[Mock Stealth Typer]:", text);
+      return;
+    }
+    await invoke("type_text_stealth", { text, speedMs });
+  },
+
+  async cancelStealthTyping(): Promise<void> {
+    if (!isTauri()) return;
+    await invoke("cancel_stealth_typing");
+  },
+
   // LLM Orchestration
   async generateAiSuggestion(
     action: string = "hint",
     customQuery?: string,
-    pastAnswers?: Array<{ action: string; query: string; answer: string }>
+    pastAnswers?: Array<{ action: string; query: string; answer: string }>,
+    imageData?: string
   ): Promise<string> {
     if (!isTauri()) {
       return "Mock AI response: Consider breaking down the architecture into high-throughput message streams with idempotent consumer workers.";
@@ -188,6 +221,7 @@ export const TauriApi = {
       action,
       customQuery,
       pastAnswers,
+      imageData,
     });
   },
 

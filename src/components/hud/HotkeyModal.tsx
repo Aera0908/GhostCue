@@ -21,6 +21,8 @@ export const HotkeyModal: React.FC<HotkeyModalProps> = ({ isOpen, onClose }) => 
         { keys: ["Ctrl", "Shift", "L"], desc: t.actions.clarifyDesc, icon: HelpCircle, color: "text-purple-400" },
         { keys: ["Ctrl", "Shift", "E"], desc: t.actions.systemDesignDesc, icon: Layers, color: "text-emerald-400" },
         { keys: ["Ctrl", "Shift", "S"], desc: t.actions.screenVisionDesc, icon: Monitor, color: "text-rose-400" },
+        { keys: ["Ctrl", "Shift", "O"], desc: "Toggle Live Screen OCR (Auto-Scan)", icon: Monitor, color: "text-rose-400" },
+        { keys: ["Ctrl", "Shift", "T"], desc: "Stealth Typer (Bypass Paste Detection)", icon: Keyboard, color: "text-emerald-400" },
         { keys: ["Esc"], desc: t.actions.stopAi, icon: X, color: "text-slate-400" },
       ],
     },

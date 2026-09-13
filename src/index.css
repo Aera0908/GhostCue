@@ -59,3 +59,23 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* KaTeX Math & Special Character Typography */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0.25rem;
+  margin: 0.75rem 0 !important;
+  scrollbar-width: thin;
+}
+
+.katex {
+  font-size: 1.05em;
+  text-rendering: auto;
+  color: #f8fafc;
+}
+
+.katex-html {
+  user-select: text;
+}
+

@@ -9,8 +9,20 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize)]
-struct GeminiPart {
-    text: String,
+struct InlineData {
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+    data: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum GeminiPart {
+    Text { text: String },
+    Image {
+        #[serde(rename = "inlineData")]
+        inline_data: InlineData,
+    },
 }
 
 #[derive(Serialize)]
@@ -65,6 +77,7 @@ impl GeminiClient {
         app_handle: AppHandle,
         system_prompt: String,
         user_prompt: String,
+        image_data: Option<String>,
         abort_flag: Arc<AtomicBool>,
     ) -> Result<String, String> {
         if self.api_key.is_empty() {
@@ -79,17 +92,30 @@ impl GeminiClient {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
+        let mut user_parts: Vec<GeminiPart> = Vec::new();
+        if let Some(img_b64) = image_data {
+            if !img_b64.trim().is_empty() {
+                user_parts.push(GeminiPart::Image {
+                    inline_data: InlineData {
+                        mime_type: "image/jpeg".to_string(),
+                        data: img_b64,
+                    },
+                });
+            }
+        }
+        user_parts.push(GeminiPart::Text {
+            text: user_prompt,
+        });
+
         let body = GeminiRequest {
             system_instruction: GeminiSystemInstruction {
-                parts: vec![GeminiPart {
+                parts: vec![GeminiPart::Text {
                     text: system_prompt,
                 }],
             },
             contents: vec![GeminiContent {
                 role: "user".to_string(),
-                parts: vec![GeminiPart {
-                    text: user_prompt,
-                }],
+                parts: user_parts,
             }],
             generation_config: GeminiGenerationConfig {
                 temperature: 0.3,

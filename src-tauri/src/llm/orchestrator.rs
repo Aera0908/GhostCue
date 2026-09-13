@@ -38,6 +38,7 @@ impl LlmOrchestrator {
         action_name: String,
         custom_query: Option<String>,
         past_answers: Option<Vec<PastAnswerEntry>>,
+        image_data: Option<String>,
     ) -> Result<String, String> {
         // Cancel any existing generation in flight
         self.cancel_generation();
@@ -67,17 +68,19 @@ impl LlmOrchestrator {
             past_answers.as_deref(),
         );
 
+        let has_image = image_data.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let effective_model = config.get_effective_model(&action_name);
+
+        info!("Routing action '{}' to provider: '{}', model: '{}' (smart routing: {})",
+            action_name, config.llm_provider, effective_model, config.smart_model_routing);
+
         let payload_start = serde_json::json!({
             "action": action_name,
             "query": custom_query,
+            "has_image": has_image,
             "provider": config.llm_provider,
-            "model": match config.llm_provider.as_str() {
-                "gemini" => config.gemini_model.clone(),
-                "ollama" => config.ollama_model.clone(),
-                "openai" => config.openai_model.clone(),
-                "anthropic" => config.anthropic_model.clone(),
-                _ => config.custom_model.clone(),
-            }
+            "model": effective_model.clone(),
+            "smart_routed": config.smart_model_routing,
         });
 
         let _ = app_handle.emit_to("main", "llm-start", payload_start.clone());
@@ -85,36 +88,36 @@ impl LlmOrchestrator {
 
         let result = match config.llm_provider.as_str() {
             "gemini" => {
-                let client = GeminiClient::new(config.gemini_api_key, config.gemini_model);
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                let client = GeminiClient::new(config.gemini_api_key, effective_model.clone());
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
             "ollama" => {
-                let client = OllamaClient::new(config.ollama_endpoint, config.ollama_model);
-                client.stream_generate(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                let client = OllamaClient::new(config.ollama_endpoint, effective_model.clone());
+                client.stream_generate(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
             "openai" => {
-                let client = OpenAiClient::new(config.openai_base_url, config.openai_api_key, config.openai_model);
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                let client = OpenAiClient::new(config.openai_base_url, config.openai_api_key, effective_model.clone());
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
             "anthropic" => {
                 let client = OpenAiClient::new(
                     if config.custom_endpoint.is_empty() { "https://api.anthropic.com/v1".to_string() } else { config.custom_endpoint },
                     config.anthropic_api_key,
-                    config.anthropic_model,
+                    effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
             "groq" => {
                 let client = OpenAiClient::new(
                     "https://api.groq.com/openai/v1".to_string(),
                     config.openai_api_key,
-                    if config.openai_model.is_empty() { "llama-3.3-70b-versatile".to_string() } else { config.openai_model },
+                    effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
             _ => {
-                let client = OpenAiClient::new(config.custom_endpoint, config.custom_api_key, config.custom_model);
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, abort_flag).await
+                let client = OpenAiClient::new(config.custom_endpoint, config.custom_api_key, effective_model.clone());
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
             }
         };
 
@@ -124,6 +127,7 @@ impl LlmOrchestrator {
                     "text": full_text.clone(),
                     "action": action_name,
                     "query": custom_query,
+                    "model": effective_model,
                 });
                 let _ = app_handle.emit_to("main", "llm-complete", payload_complete.clone());
                 let _ = app_handle.emit("llm-complete", payload_complete);

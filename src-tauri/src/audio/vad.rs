@@ -4,8 +4,8 @@ use log::info;
 
 pub const VAD_FRAME_SIZE: usize = 512; // 32ms at 16kHz
 pub const SAMPLE_RATE: usize = 16000;
-const PRE_SPEECH_FRAMES: usize = 10; // ~320ms pre-roll buffer to preserve starting consonants
-const MAX_SEGMENT_DURATION_SECS: u64 = 30; // Allow complete sentences and full interview questions up to 30s
+const PRE_SPEECH_FRAMES: usize = 10; // ~320ms pre-roll buffer
+const MAX_SEGMENT_DURATION_SECS: u64 = 30; // Maximum segment duration
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VadState {
@@ -48,7 +48,7 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn new(is_interviewer: bool, threshold: f32, _min_speech_ms: u64, silence_cutoff_ms: u64) -> Self {
-        // Natural speech pauses in interviews range 1.0 - 1.8s. Avoid cutting off mid-sentence.
+        // Use longer cutoff for interviewer to avoid splitting sentences
         let effective_cutoff_ms = if is_interviewer {
             silence_cutoff_ms.max(1600).clamp(500, 3500)
         } else {
@@ -58,7 +58,7 @@ impl VadDetector {
         Self {
             is_interviewer,
             threshold: threshold.clamp(0.1, 0.9),
-            min_speech_duration: Duration::from_millis(100), // Quick ~100ms voice onset
+            min_speech_duration: Duration::from_millis(100),
             silence_cutoff_duration: Duration::from_millis(effective_cutoff_ms),
             state: VadState::Silence,
             speech_start_instant: None,
@@ -73,7 +73,7 @@ impl VadDetector {
         }
     }
 
-    /// Apply an 85Hz highpass filter to remove AC hum, mechanical vibration, and DC offset
+    /// 85Hz highpass filter to reduce low-frequency noise and DC offset
     pub fn filter_noise(&mut self, frame: &[f32]) -> Vec<f32> {
         let r = 0.967f32;
         let mut filtered = Vec::with_capacity(frame.len());

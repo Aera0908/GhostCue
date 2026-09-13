@@ -5,6 +5,8 @@ pub mod project_scanner;
 pub mod state;
 pub mod stt;
 pub mod window;
+pub mod screen;
+pub mod stealth;
 
 use log::info;
 use state::AppState;
@@ -37,6 +39,9 @@ pub fn run() {
                 let initial_config = app_state.config_manager.get_config();
                 if initial_config.anti_capture_enabled {
                     let _ = apply_anti_capture_protection(&main_window, true);
+                }
+                if initial_config.focus_shield_enabled {
+                    let _ = stealth::apply_focus_shield(&main_window, true);
                 }
             }
 
@@ -173,6 +178,12 @@ pub fn run() {
             project_scanner::scan_multiple_project_directories,
             project_scanner::select_directory_dialog,
             project_scanner::save_text_file,
+            // Screen Capture & OCR
+            screen::capture_screen_for_ocr,
+            // Stealth & Assessment Protection
+            stealth::set_focus_shield,
+            stealth::type_text_stealth,
+            stealth::cancel_stealth_typing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostCue application");

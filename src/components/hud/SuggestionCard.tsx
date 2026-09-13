@@ -174,7 +174,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
     <div
       role="region"
       aria-label="AI Assistant Answer Card"
-      className="flex flex-col bg-slate-900/90 text-slate-100 font-sans h-full relative select-none rounded-b-lg border-t border-slate-800"
+      className="flex flex-col bg-slate-900/90 text-slate-100 font-sans h-full flex-1 min-h-0 relative select-none rounded-b-lg border-t border-slate-800"
     >
       {/* 1. Header Bar */}
       <div className="flex items-center justify-between px-3.5 py-2 bg-slate-850 border-b border-slate-700/80 text-xs">
@@ -434,9 +434,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
       <div
         role="log"
         aria-live="polite"
-        className={`p-3.5 text-slate-100 overflow-y-auto leading-relaxed select-text scrollbar-thin ${
-          isExpanded ? "max-h-[580px]" : "max-h-[360px]"
-        }`}
+        className="flex-1 min-h-0 p-3.5 text-slate-100 overflow-y-auto leading-relaxed select-text scrollbar-thin flex flex-col"
       >
         {error ? (
           <div className="flex items-start gap-3 p-3.5 bg-rose-950/60 border border-rose-600/60 rounded-lg text-rose-200 text-xs">

@@ -12,12 +12,60 @@ import { SettingsModal } from "./components/settings/SettingsModal";
 import { StartupSessionScreen } from "./components/session/StartupSessionScreen";
 import { DirectoryPermissionModal } from "./components/common/DirectoryPermissionModal";
 import { exportSessionAsTxt } from "./utils/exportTxt";
-import { Sparkles, Maximize, ShieldCheck, Pause, Play } from "lucide-react";
+import { Sparkles, Maximize, ShieldCheck, ShieldAlert, Pause, Play } from "lucide-react";
 import { I18nProvider } from "./i18n";
 
 const STORAGE_SESSIONS_KEY = "ghostcue_interview_sessions";
 const STORAGE_ACTIVE_SESSION_KEY = "ghostcue_active_session_id";
 const STORAGE_LAYOUT_MODE_KEY = "ghostcue_layout_mode";
+
+// Computes bit difference between two 64-bit hex hash strings
+const getHexHammingDistance = (h1: string, h2: string): number => {
+  try {
+    if (!h1 || !h2) return 64;
+    let b1 = BigInt(`0x${h1}`);
+    let b2 = BigInt(`0x${h2}`);
+    let xor = b1 ^ b2;
+    let distance = 0;
+    while (xor > 0n) {
+      if (xor & 1n) distance++;
+      xor >>= 1n;
+    }
+    return distance;
+  } catch {
+    return 64;
+  }
+};
+
+// Computes word-level Jaccard similarity between two text snippets
+const getProblemSimilarity = (textA: string, textB: string): number => {
+  if (!textA || !textB) return 0;
+
+  const extractWords = (t: string) => {
+    return new Set(
+      t
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 3)
+    );
+  };
+
+  const setA = extractWords(textA);
+  const setB = extractWords(textB);
+
+  if (setA.size === 0 || setB.size === 0) return 0;
+
+  let intersection = 0;
+  for (const word of setA) {
+    if (setB.has(word)) {
+      intersection++;
+    }
+  }
+
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+};
 
 export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -26,8 +74,18 @@ export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
+  const [hudToast, setHudToast] = useState<{ message: string; type?: "info" | "success" | "warning" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Pluely-style User-side Modes & Accessibility
+  const showHudToast = (message: string, type: "info" | "success" | "warning" = "info") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setHudToast({ message, type });
+    toastTimerRef.current = setTimeout(() => {
+      setHudToast(null);
+    }, 3200);
+  };
+
+  // Layout mode and view state
   const [layoutMode, setLayoutMode] = useState<HudLayoutMode>(() => {
     return (localStorage.getItem(STORAGE_LAYOUT_MODE_KEY) as HudLayoutMode) || "split";
   });
@@ -228,14 +286,26 @@ export const App: React.FC = () => {
     inLiveHudRef.current = inLiveHud;
     if (inLiveHud) {
       TauriApi.startAudioCapture().catch(console.warn);
+      if (configRef.current.focus_shield_enabled ?? true) {
+        TauriApi.setFocusShield(true).catch(console.warn);
+      }
     } else {
       TauriApi.stopAudioCapture().catch(console.warn);
       setMicLevel(0);
       setMicActive(false);
       setLoopbackLevel(0);
       setLoopbackActive(false);
+      TauriApi.setFocusShield(false).catch(console.warn);
     }
   }, [inLiveHud]);
+
+  useEffect(() => {
+    if (isSettingsOpen) {
+      TauriApi.setFocusShield(false).catch(console.warn);
+    } else if (inLiveHud && (configRef.current.focus_shield_enabled ?? true)) {
+      TauriApi.setFocusShield(true).catch(console.warn);
+    }
+  }, [isSettingsOpen, inLiveHud]);
 
   const configRef = useRef<AppConfig>(config);
   useEffect(() => {
@@ -253,9 +323,12 @@ export const App: React.FC = () => {
   }, [layoutMode]);
 
   const lastAutoAnsweredTurnRef = useRef<string | null>(null);
-  const handleTriggerActionRef = useRef<((action: string, customQuery?: string, isManualInput?: boolean) => Promise<void>) | null>(null);
+  const handleTriggerActionRef = useRef<((action: string, customQuery?: string, isManualInput?: boolean, preloadedImage?: string) => Promise<void>) | null>(null);
   const autoTriggerTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingAutoTriggerTurnRef = useRef<{ text: string; turnId: string } | null>(null);
+  const liveOcrTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastScreenHashRef = useRef<string | null>(null);
+  const lastPromptedProblemTextRef = useRef<string | null>(null);
 
   const maybeAutoTrigger = (turnText: string, turnId?: string, speaker?: string) => {
     if (!inLiveHudRef.current || isPausedRef.current) return;
@@ -285,10 +358,12 @@ export const App: React.FC = () => {
     // Store latest question text
     pendingAutoTriggerTurnRef.current = { text: trimmed, turnId: turnKey };
 
-    // Reset debounce timer: wait 1500ms of conversational pause to ensure interviewer finished full thought
+    // Reset debounce timer: wait auto_trigger_delay_ms of conversational pause to ensure interviewer finished full thought
     if (autoTriggerTimerRef.current) {
       clearTimeout(autoTriggerTimerRef.current);
     }
+
+    const delayMs = Math.max(300, configRef.current.auto_trigger_delay_ms || 1500);
 
     autoTriggerTimerRef.current = setTimeout(() => {
       autoTriggerTimerRef.current = null;
@@ -313,7 +388,7 @@ export const App: React.FC = () => {
       if (handleTriggerActionRef.current) {
         handleTriggerActionRef.current("hint", fullQuestion, false);
       }
-    }, 1500);
+    }, delayMs);
   };
 
   // Init config & event listeners on mount
@@ -327,6 +402,7 @@ export const App: React.FC = () => {
         configRef.current = loadedConfig;
         setOpacity(loadedConfig.opacity);
         setClickThrough(loadedConfig.click_through);
+        await TauriApi.setFocusShield(loadedConfig.focus_shield_enabled ?? true);
 
         const u1 = await TauriApi.onTranscript((seg) => {
           if (!inLiveHudRef.current || isPausedRef.current) return;
@@ -398,7 +474,12 @@ export const App: React.FC = () => {
         });
 
         const u5 = await TauriApi.onLlmToken((ev) => {
-          setSuggestion((prev) => prev + ev.token);
+          setSuggestion((prev) => {
+            if (prev.startsWith("📸") || prev.startsWith("🧠")) {
+              return ev.token;
+            }
+            return prev + ev.token;
+          });
         });
 
         const u6 = await TauriApi.onLlmComplete((ev: any) => {
@@ -485,8 +566,95 @@ export const App: React.FC = () => {
       if (autoTriggerTimerRef.current) {
         clearTimeout(autoTriggerTimerRef.current);
       }
+      if (liveOcrTimerRef.current) {
+        clearInterval(liveOcrTimerRef.current);
+        liveOcrTimerRef.current = null;
+      }
     };
   }, [activeSessionId, micMuted, loopbackMuted]);
+
+  // Periodic Live Screen OCR Autonomous Scanner
+  useEffect(() => {
+    if (!inLiveHud || isPaused || !config.live_ocr_enabled) {
+      if (liveOcrTimerRef.current) {
+        clearInterval(liveOcrTimerRef.current);
+        liveOcrTimerRef.current = null;
+      }
+      return;
+    }
+
+    const intervalSecs = Math.max(3, config.live_ocr_interval_secs || 10);
+    const intervalMs = intervalSecs * 1000;
+
+    const performLiveOcrScan = async () => {
+      if (!inLiveHudRef.current || isPausedRef.current || isStreamingRef.current || !configRef.current.live_ocr_enabled) {
+        return;
+      }
+
+      try {
+        const captureRes = await TauriApi.captureScreenForOcr();
+        if (!captureRes) return;
+
+        // Perceptual hash diff check to skip identical screens
+        const smartDiff = configRef.current.live_ocr_smart_diff ?? true;
+        if (smartDiff && captureRes.screen_hash && lastScreenHashRef.current) {
+          const distance = getHexHammingDistance(lastScreenHashRef.current, captureRes.screen_hash);
+          if (distance < 4) {
+            return;
+          }
+        }
+        lastScreenHashRef.current = captureRes.screen_hash || null;
+
+        // Text similarity check against previous scan
+        const currentText = captureRes.extracted_text?.trim() || "";
+        if (currentText.length >= 15) {
+          if (lastPromptedProblemTextRef.current) {
+            const similarity = getProblemSimilarity(currentText, lastPromptedProblemTextRef.current);
+            if (similarity >= 0.70) {
+              console.log(`[Live OCR] Same problem detected on screen (${(similarity * 100).toFixed(1)}% match). Skipping duplicate request.`);
+              return;
+            }
+          }
+        }
+
+        if (!inLiveHudRef.current || isPausedRef.current || isStreamingRef.current) {
+          return;
+        }
+
+        if (layoutModeRef.current === "listen") {
+          handleChangeLayoutMode("split");
+        }
+
+        // Send extracted text as query if available, otherwise send screenshot
+        if (handleTriggerActionRef.current) {
+          if (currentText.length >= 15) {
+            lastPromptedProblemTextRef.current = currentText;
+            const query = `[Visible Screen Problem & Code (Extracted Locally via Native OCR)]:\n\n${currentText}`;
+            handleTriggerActionRef.current("vision", query, false, undefined);
+          } else if (captureRes.base64_image) {
+            handleTriggerActionRef.current("vision", undefined, false, captureRes.base64_image);
+          }
+        }
+      } catch (err) {
+        console.warn("Live Screen OCR scan error:", err);
+      }
+    };
+
+    // Initial scan after short delay
+    const initialTimer = setTimeout(() => {
+      performLiveOcrScan();
+    }, 1500);
+
+    liveOcrTimerRef.current = setInterval(performLiveOcrScan, intervalMs);
+
+    return () => {
+      clearTimeout(initialTimer);
+      if (liveOcrTimerRef.current) {
+        clearInterval(liveOcrTimerRef.current);
+        liveOcrTimerRef.current = null;
+      }
+    };
+  }, [inLiveHud, isPaused, config.live_ocr_enabled, config.live_ocr_interval_secs, config.live_ocr_smart_diff]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -519,6 +687,13 @@ export const App: React.FC = () => {
       if (e.ctrlKey && e.shiftKey && (e.key === "M" || e.key === "m")) {
         e.preventDefault();
         setMicMuted((prev) => !prev);
+        return;
+      }
+
+      // Ctrl + Shift + F: Toggle Focus Shield
+      if (e.ctrlKey && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        handleToggleFocusShield();
         return;
       }
 
@@ -573,8 +748,23 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Esc: Stop generation or close modal
+      // Ctrl + Shift + O: Toggle Live Screen OCR (Auto-Scan)
+      if (e.ctrlKey && e.shiftKey && (e.key === "O" || e.key === "o")) {
+        e.preventDefault();
+        handleToggleLiveOcr();
+        return;
+      }
+
+      // Ctrl + Shift + T: Stealth Typer (simulates keyboard typing)
+      if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+        e.preventDefault();
+        handleStealthTypeLatestCode();
+        return;
+      }
+
+      // Esc: Stop generation, cancel stealth typing, or close modal
       if (e.key === "Escape") {
+        TauriApi.cancelStealthTyping().catch(console.warn);
         if (isSettingsOpen) {
           setIsSettingsOpen(false);
         } else if (isStreaming) {
@@ -750,12 +940,62 @@ export const App: React.FC = () => {
     await TauriApi.saveConfig(newConfig);
   };
 
+  const handleToggleFocusShield = async () => {
+    const currentState = configRef.current.focus_shield_enabled ?? true;
+    const next = !currentState;
+    const updated = await TauriApi.setFocusShield(next);
+    const newConfig = { ...configRef.current, focus_shield_enabled: updated };
+    configRef.current = newConfig;
+    setConfig(newConfig);
+    await TauriApi.saveConfig(newConfig);
+    showHudToast(
+      updated
+        ? "Focus Shield ON: Clicks will not steal focus from exam"
+        : "Focus Shield OFF: Typing enabled in GhostCue",
+      updated ? "success" : "warning"
+    );
+  };
+
+  const handleStealthTypeLatestCode = async () => {
+    const textToSearch = suggestion || (aiLogs.length > 0 ? aiLogs[aiLogs.length - 1].answer : "");
+    const codeMatch = /```[a-zA-Z0-9_+#.-]*\n([\s\S]*?)```/.exec(textToSearch);
+    if (!codeMatch || !codeMatch[1]?.trim()) {
+      return; // Only type if code block is present
+    }
+    const codeToType = codeMatch[1].trimEnd();
+    if (codeToType.length > 0 && codeToType.length < 5000) {
+      try {
+        await TauriApi.typeTextStealth(codeToType);
+      } catch (err) {
+        console.error("Stealth typer hotkey error:", err);
+      }
+    }
+  };
+
   const handleToggleAutoTrigger = async () => {
     const next = !configRef.current.auto_trigger_enabled;
     const newConfig = { ...configRef.current, auto_trigger_enabled: next };
     configRef.current = newConfig;
     setConfig(newConfig);
     await TauriApi.saveConfig(newConfig);
+  };
+
+  const handleToggleLiveOcr = async () => {
+    const next = !configRef.current.live_ocr_enabled;
+    const newConfig = { ...configRef.current, live_ocr_enabled: next };
+    configRef.current = newConfig;
+    setConfig(newConfig);
+    if (next) {
+      lastScreenHashRef.current = null;
+      lastPromptedProblemTextRef.current = null;
+    }
+    await TauriApi.saveConfig(newConfig);
+    showHudToast(
+      next
+        ? `Live Screen OCR ON (Scanning every ${newConfig.live_ocr_interval_secs || 10}s)`
+        : "Live Screen OCR OFF",
+      next ? "success" : "info"
+    );
   };
 
   const handleTogglePause = async () => {
@@ -803,7 +1043,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleTriggerAction = async (action: string, customQuery?: string, isManualInput: boolean = false) => {
+  const handleTriggerAction = async (action: string, customQuery?: string, isManualInput: boolean = false, preloadedImage?: string) => {
     const hasQuery = customQuery && customQuery.trim().length > 0;
 
     let promptQuery = customQuery?.trim();
@@ -843,17 +1083,59 @@ export const App: React.FC = () => {
       setTranscripts((prev) => [...prev, manualSegment]);
     }
 
-    // Extract recent Q&A history from this session to guarantee technical consistency & continuity
+    // Include recent Q&A turns from this session for context
     const pastAnswersPayload = aiLogs.slice(-6).map((log) => ({
       action: log.action,
       query: log.query || "",
       answer: log.answer,
     }));
 
+    let base64Image: string | undefined = preloadedImage;
+
+    if (action === "vision") {
+      if (!customQuery && !base64Image) {
+        setSuggestion("🔍 Parsing screen with native local OCR (0 vision tokens)...");
+        try {
+          const captureRes = await TauriApi.captureScreenForOcr();
+          if (captureRes) {
+            if (captureRes.screen_hash) {
+              lastScreenHashRef.current = captureRes.screen_hash;
+            }
+            const extracted = captureRes.extracted_text?.trim() || "";
+            if (extracted.length >= 15) {
+              lastPromptedProblemTextRef.current = extracted;
+              promptQuery = `[Visible Screen Problem & Code (Extracted Locally via Native OCR)]:\n\n${extracted}`;
+              customQuery = promptQuery;
+              base64Image = undefined; // Prefer extracted text over image payload
+              setSuggestion(`🧠 Solving extracted problem (${extracted.length} chars) with ${configRef.current.llm_provider || "AI"}...`);
+            } else if (captureRes.base64_image) {
+              base64Image = captureRes.base64_image;
+              setSuggestion(`📸 Analyzing diagram screenshot with ${configRef.current.llm_provider || "AI"}...`);
+            }
+          }
+        } catch (capErr: any) {
+          console.warn("Screen capture failed:", capErr);
+          setLlmError(`Screen capture failed: ${capErr?.toString() || "Unknown error"}. Check display permissions.`);
+          setIsStreaming(false);
+          isStreamingRef.current = false;
+          return;
+        }
+      } else if (customQuery) {
+        setSuggestion(`🧠 Solving extracted problem with ${configRef.current.llm_provider || "AI"}...`);
+      } else {
+        setSuggestion(`📸 Analyzing screen with ${configRef.current.llm_provider || "AI"}...`);
+      }
+    }
+
     try {
-      const res = await TauriApi.generateAiSuggestion(action, customQuery, pastAnswersPayload);
+      const res = await TauriApi.generateAiSuggestion(action, customQuery, pastAnswersPayload, base64Image);
       if (res && res.trim().length > 0) {
-        setSuggestion((prev) => prev || res);
+        setSuggestion((prev) => {
+          if (!prev || prev.startsWith("📸") || prev.startsWith("🧠")) {
+            return res;
+          }
+          return prev;
+        });
         saveAiLogEntry(res, action, promptQuery);
       }
     } catch (err: any) {
@@ -887,8 +1169,8 @@ export const App: React.FC = () => {
     setConfig(saved);
     setOpacity(saved.opacity);
     await TauriApi.setAntiCapture(saved.anti_capture_enabled);
-
     if (inLiveHud) {
+      await TauriApi.setFocusShield(saved.focus_shield_enabled ?? true);
       try {
         await TauriApi.stopAudioCapture();
         await TauriApi.startAudioCapture();
@@ -953,6 +1235,14 @@ export const App: React.FC = () => {
           className="relative flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-full shadow-2xl select-none font-sans"
           style={{ backgroundColor: `rgba(15, 23, 42, ${opacity})` }}
         >
+          {/* Floating Notification Toast */}
+          {hudToast && (
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-slate-900/95 border border-indigo-500/60 rounded-full shadow-xl text-[11px] font-semibold text-slate-100 flex items-center gap-1.5 pointer-events-none whitespace-nowrap animate-in fade-in">
+              <ShieldAlert className={`w-3 h-3 ${hudToast.type === 'success' ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <span>{hudToast.message}</span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 text-xs text-slate-300 font-semibold px-2 py-0.5 bg-slate-800 rounded-full">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -1028,7 +1318,9 @@ export const App: React.FC = () => {
           config={config}
           opacity={opacity}
           onToggleAntiCapture={handleToggleAntiCapture}
+          onToggleFocusShield={handleToggleFocusShield}
           onToggleAutoTrigger={handleToggleAutoTrigger}
+          onToggleLiveOcr={handleToggleLiveOcr}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenSessions={() => setInLiveHud(false)}
           layoutMode={layoutMode}
@@ -1040,6 +1332,14 @@ export const App: React.FC = () => {
           isPaused={isPaused}
           onTogglePause={handleTogglePause}
         />
+
+        {/* Floating Notification Toast */}
+        {hudToast && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 bg-slate-900/95 border border-indigo-500/60 rounded-full shadow-2xl text-xs font-semibold text-slate-100 flex items-center gap-2 pointer-events-none backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150">
+            <ShieldAlert className={`w-3.5 h-3.5 ${hudToast.type === 'success' ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span>{hudToast.message}</span>
+          </div>
+        )}
 
         {/* 2. Audio Level Strip */}
         <AudioMeters
@@ -1085,7 +1385,7 @@ export const App: React.FC = () => {
             </div>
 
             {/* Lower: AI Suggestion & Code Studio */}
-            <div style={{ height: `${100 - splitPercent}%` }} className="overflow-hidden flex flex-col">
+            <div style={{ height: `${100 - splitPercent}%` }} className="overflow-hidden flex flex-col min-h-0">
               <SuggestionCard
                 content={suggestion}
                 isStreaming={isStreaming}
@@ -1104,7 +1404,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         ) : layoutMode === "listen" ? (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <TranscriptStream
               transcripts={transcripts}
               onClear={handleClearTranscripts}
@@ -1123,7 +1423,7 @@ export const App: React.FC = () => {
             />
           </div>
         ) : (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <SuggestionCard
               content={suggestion}
               isStreaming={isStreaming}

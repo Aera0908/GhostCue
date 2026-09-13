@@ -84,7 +84,7 @@ impl AudioCaptureManager {
             warn!("  NO system default output device found!");
         }
 
-        // 1. Setup Candidate Microphone Stream
+        // 1. Microphone stream
         if config.mic_enabled {
             info!("  Setting up microphone stream...");
             match self.setup_mic_stream(
@@ -112,7 +112,7 @@ impl AudioCaptureManager {
             info!("  Microphone disabled in config, skipping.");
         }
 
-        // 2. Setup Interviewer Loopback Stream (System Audio)
+        // 2. Loopback audio stream
         if config.loopback_enabled {
             info!("  Setting up loopback stream...");
             match self.setup_loopback_stream(

@@ -1,6 +1,7 @@
 export interface AppConfig {
   // Window & Stealth
   anti_capture_enabled: boolean;
+  focus_shield_enabled?: boolean;
   opacity: number;
   click_through: boolean;
   always_on_top: boolean;
@@ -54,5 +55,10 @@ export interface AppConfig {
   project_context?: string;
   system_prompt_override: string;
   auto_trigger_enabled: boolean;
+  auto_trigger_delay_ms?: number;
+  live_ocr_enabled?: boolean;
+  live_ocr_interval_secs?: number;
+  live_ocr_smart_diff?: boolean;
   max_context_turns: number;
+  smart_model_routing?: boolean;
 }
