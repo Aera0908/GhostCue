@@ -48,53 +48,64 @@ The following diagram illustrates the complete audio capture, speech transcripti
 
 ```mermaid
 flowchart TD
-    subgraph AudioIngestion["1. Dual-Channel Audio Ingestion"]
-        WASAPI["Interviewer Voice<br/>(WASAPI System Loopback)"]
-        MIC["Candidate Voice<br/>(Microphone Input)"]
-        CPAL["cpal Audio Controller<br/>(Mono 16 kHz F32 Conversion)"]
-        VAD["Voice Activity Detection<br/>(Energy, ZCR & 85 Hz High-Pass Filter)"]
-        
-        WASAPI --> CPAL
-        MIC --> CPAL
-        CPAL --> VAD
+    subgraph S1 ["1. INPUT & CAPTURE STREAMS"]
+        WASAPI["System Audio Loopback<br/>(WASAPI / cpal 16 kHz)"]:::cyan
+        MIC["Microphone Input<br/>(Candidate Audio)"]:::cyan
+        VISION["Live Screen Capture<br/>(Native Windows OCR)"]:::emerald
+        REPO["Project Codebase<br/>(Manifests & Architecture)"]:::emerald
     end
 
-    subgraph SpeechPipeline["2. Speech-to-Text Pipeline"]
-        VAD --> STT_SELECT{"STT Engine Selector"}
-        STT_SELECT -->|"Offline / Local"| WHISPER["Local Whisper GGML<br/>(tiny, base, small, medium, large-v3-turbo)"]
-        STT_SELECT -->|"Cloud Low-Latency"| DEEPGRAM["Deepgram Nova-2 Streaming WebSocket"]
-        STT_SELECT -->|"Cloud API"| CLOUD_WHISPER["OpenAI / Groq Cloud Whisper"]
-        
-        WHISPER --> DIARIZATION["Speaker Diarization<br/>(Interviewer vs Candidate)"]
-        DEEPGRAM --> DIARIZATION
-        CLOUD_WHISPER --> DIARIZATION
+    subgraph S2 ["2. REAL-TIME PROCESSING & SPEECH-TO-TEXT"]
+        VAD["Voice Activity Detection<br/>(85 Hz High-Pass Filter + Silence Cutoff)"]:::blue
+        STT["Speech-to-Text Engine<br/>Local Whisper GGML • Deepgram • Cloud Whisper"]:::blue
+        STATE["Conversation & Context Manager<br/>Dialogue History + Codebase Context"]:::purple
     end
 
-    subgraph ContextAssembly["3. Context & Multimodal Ingestion"]
-        DIARIZATION --> CONTEXT_BUS["Conversation State Manager"]
-        SCANNER["Local Project Scanner<br/>(package.json, Cargo.toml, go.mod manifests)"] --> CONTEXT_BUS
-        PROFILE["Candidate Resume & Job Description"] --> CONTEXT_BUS
-        OCR["Native Windows OCR / Screen Vision<br/>(Real-Time Framebuffer Extraction)"] --> CONTEXT_BUS
+    subgraph S3 ["3. LLM INTELLIGENCE & ROUTING"]
+        ROUTER{"Smart Task Router<br/>Task & Latency Routing"}:::purpleAcc
+        FLAGSHIP["Flagship Models<br/>GPT-4o • Claude 3.5/3.7 Sonnet • Gemini 2.5 Pro"]:::amber
+        FAST["High-Speed Models<br/>Gemini 2.5 Flash • GPT-4o Mini • Claude 3.5 Haiku"]:::sky
+        OLLAMA["Local Offline Models<br/>Qwen 2.5 Coder • Llama 3.1 • DeepSeek R1"]:::fuchsia
     end
 
-    subgraph ModelRouting["4. LLM Orchestration & Smart Routing"]
-        CONTEXT_BUS --> ROUTER{"Smart Task Router"}
-        ROUTER -->|"Complex Code & System Design"| FLAGSHIP["Flagship Models<br/>(GPT-4o, Claude 3.5/3.7 Sonnet, Gemini 2.5 Pro)"]
-        ROUTER -->|"Instant Hints & Rapid Q&A"| FAST["High-Speed Models<br/>(Gemini 2.5 Flash, GPT-4o Mini, Claude 3.5 Haiku)"]
-        ROUTER -->|"Local & Sovereign"| OLLAMA["Local Ollama<br/>(Qwen 2.5 Coder, Llama 3.1, DeepSeek R1)"]
-        
-        FLAGSHIP --> IPC_STREAM["Tauri IPC Streaming Bridge"]
-        FAST --> IPC_STREAM
-        OLLAMA --> IPC_STREAM
+    subgraph S4 ["4. NATIVE STEALTH HUD & INTERACTION"]
+        HUD["GhostCue Floating HUD Window<br/>Anti-Capture Guard (WDA_EXCLUDEFROMCAPTURE) • Focus Shield (WS_EX_NOACTIVATE)"]:::rose
+        OUTPUT["KaTeX LaTeX Math & Code Studio • Stealth Auto-Typer Keystroke Injection"]:::roseAcc
     end
 
-    subgraph DesktopHUD["5. Native Stealth Presentation Layer"]
-        IPC_STREAM --> HUD["GhostCue Floating HUD Window"]
-        SEC_CAP["Anti-Capture Guard<br/>(WDA_EXCLUDEFROMCAPTURE)"] -.-> HUD
-        SEC_FOC["Focus Shield<br/>(WS_EX_NOACTIVATE)"] -.-> HUD
-        SEC_TYP["Stealth Typer<br/>(Simulated Keystrokes)"] -.-> HUD
-        SEC_KAT["KaTeX Math Engine & Code Studio<br/>(LaTeX Rendering & Multi-Language Editor)"] -.-> HUD
-    end
+    WASAPI --> VAD
+    MIC --> VAD
+    VAD --> STT
+    STT --> STATE
+    VISION --> STATE
+    REPO --> STATE
+
+    STATE --> ROUTER
+    ROUTER -->|"Complex Code & Design"| FLAGSHIP
+    ROUTER -->|"Instant Hints"| FAST
+    ROUTER -->|"100% Offline"| OLLAMA
+
+    FLAGSHIP --> HUD
+    FAST --> HUD
+    OLLAMA --> HUD
+    HUD --> OUTPUT
+
+    %% High-Contrast Vibrant Color Classes
+    classDef cyan fill:#0369a1,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef blue fill:#1d4ed8,stroke:#60a5fa,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef emerald fill:#047857,stroke:#34d399,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef purple fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef purpleAcc fill:#6b21a8,stroke:#e9d5ff,stroke-width:2.5px,color:#ffffff,font-size:15px,font-weight:bold;
+    classDef amber fill:#b45309,stroke:#fcd34d,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef sky fill:#0284c7,stroke:#7dd3fc,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef fuchsia fill:#a21caf,stroke:#f0abfc,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef rose fill:#be123c,stroke:#fda4af,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+    classDef roseAcc fill:#9f1239,stroke:#f43f5e,stroke-width:2px,color:#ffffff,font-size:14px,font-weight:bold;
+
+    style S1 fill:#081528,stroke:#0284c7,stroke-width:1.5px,color:#38bdf8;
+    style S2 fill:#0f172a,stroke:#3b82f6,stroke-width:1.5px,color:#60a5fa;
+    style S3 fill:#190b2e,stroke:#9333ea,stroke-width:1.5px,color:#c084fc;
+    style S4 fill:#200714,stroke:#e11d48,stroke-width:1.5px,color:#fb7185;
 ```
 
 <p align="center">
@@ -106,26 +117,57 @@ flowchart TD
 The interaction flow from audio capture to the simulated typing of a solution is structured as follows:
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'darkMode': true,
+    'background': '#0d1117',
+    'actorBkg': '#161b22',
+    'actorBorder': '#38bdf8',
+    'actorTextColor': '#f0f6fc',
+    'actorLineColor': '#38bdf8',
+    'signalColor': '#58a6ff',
+    'signalTextColor': '#f0f6fc',
+    'labelBoxBkgColor': '#161b22',
+    'labelBoxBorderColor': '#388bfd',
+    'labelTextColor': '#f0f6fc',
+    'loopTextColor': '#f0f6fc',
+    'noteBkgColor': '#1c2128',
+    'noteBorderColor': '#8957e5',
+    'noteTextColor': '#e6edf3',
+    'activationBkgColor': '#0c2d6b',
+    'activationBorderColor': '#58a6ff',
+    'sequenceNumberColor': '#ffffff',
+    'fontSize': '14px',
+    'fontFamily': 'ui-sans-serif, system-ui, -apple-system, sans-serif'
+  }
+}}%%
 sequenceDiagram
     autonumber
     actor Interviewer as Interviewer
-    participant WASAPI as WASAPI Loopback
-    participant VAD as VAD Engine
-    participant STT as STT Pipeline
-    participant Orchestrator as Context & LLM Router
-    participant HUD as GhostCue HUD
+    participant Audio as WASAPI Loopback & VAD
+    participant STT as Whisper / Deepgram
+    participant Engine as Context & Smart LLM Router
+    participant HUD as GhostCue Stealth HUD
     actor Candidate as Candidate
 
-    Interviewer->>WASAPI: Asks interview question
-    WASAPI->>VAD: Streams 16 kHz audio buffer
-    Interviewer->>WASAPI: Stops speaking
-    VAD->>STT: Emits voice chunk after silence threshold
-    STT->>Orchestrator: Delivers speaker-tagged transcript
-    Orchestrator->>Orchestrator: Compiles project context, resume, and active screen OCR
-    Orchestrator->>HUD: Streams tokens in real time via Tauri IPC
-    HUD->>Candidate: Displays hints, mathematical analysis, and code
-    Candidate->>HUD: Invokes Stealth Typer (Ctrl + Shift + T)
-    HUD-->>Candidate: Types code solution into active editor window
+    Interviewer->>Audio: Speaks technical question
+    activate Audio
+    Note over Audio: VAD detects sentence completion (1500ms silence)
+    Audio->>STT: Dispatches 16 kHz audio buffer
+    deactivate Audio
+    activate STT
+    STT->>Engine: Returns speaker-tagged transcript
+    deactivate STT
+    activate Engine
+    Note over Engine: Ingests active OCR screen + project codebase
+    Engine-->>HUD: Streams token chunks in real time via Tauri IPC
+    deactivate Engine
+    activate HUD
+    HUD->>Candidate: Displays hints, KaTeX math analysis & code
+    Candidate->>HUD: Triggers Stealth Typer (Ctrl + Shift + T)
+    HUD-->>Candidate: Emulates keystrokes into focused IDE assessment
+    deactivate HUD
 ```
 
 <p align="center">
