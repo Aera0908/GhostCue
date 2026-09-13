@@ -120,53 +120,44 @@ The interaction flow from audio capture to the simulated typing of a solution is
 %%{init: {
   'theme': 'base',
   'themeVariables': {
-    'darkMode': true,
-    'background': '#0d1117',
-    'actorBkg': '#161b22',
+    'actorBkg': '#0369a1',
     'actorBorder': '#38bdf8',
-    'actorTextColor': '#f0f6fc',
-    'actorLineColor': '#38bdf8',
-    'signalColor': '#58a6ff',
-    'signalTextColor': '#f0f6fc',
-    'labelBoxBkgColor': '#161b22',
-    'labelBoxBorderColor': '#388bfd',
-    'labelTextColor': '#f0f6fc',
-    'loopTextColor': '#f0f6fc',
-    'noteBkgColor': '#1c2128',
-    'noteBorderColor': '#8957e5',
-    'noteTextColor': '#e6edf3',
-    'activationBkgColor': '#0c2d6b',
-    'activationBorderColor': '#58a6ff',
+    'actorTextColor': '#ffffff',
+    'actorLineColor': '#0284c7',
+    'signalColor': '#0284c7',
+    'signalTextColor': '#0284c7',
+    'labelBoxBkgColor': '#0f172a',
+    'labelBoxBorderColor': '#38bdf8',
+    'labelTextColor': '#ffffff',
+    'noteBkgColor': '#1e1b4b',
+    'noteBorderColor': '#818cf8',
+    'noteTextColor': '#ffffff',
+    'activationBkgColor': '#0284c7',
+    'activationBorderColor': '#38bdf8',
     'sequenceNumberColor': '#ffffff',
-    'fontSize': '14px',
+    'fontSize': '15px',
     'fontFamily': 'ui-sans-serif, system-ui, -apple-system, sans-serif'
   }
 }}%%
 sequenceDiagram
     autonumber
     actor Interviewer as Interviewer
-    participant Audio as WASAPI Loopback & VAD
-    participant STT as Whisper / Deepgram
-    participant Engine as Context & Smart LLM Router
+    participant AudioEngine as Audio & Speech Pipeline
+    participant LLM as Context & Smart Router
     participant HUD as GhostCue Stealth HUD
-    actor Candidate as Candidate
 
-    Interviewer->>Audio: Speaks technical question
-    activate Audio
-    Note over Audio: VAD detects sentence completion (1500ms silence)
-    Audio->>STT: Dispatches 16 kHz audio buffer
-    deactivate Audio
-    activate STT
-    STT->>Engine: Returns speaker-tagged transcript
-    deactivate STT
-    activate Engine
-    Note over Engine: Ingests active OCR screen + project codebase
-    Engine-->>HUD: Streams token chunks in real time via Tauri IPC
-    deactivate Engine
+    Interviewer->>AudioEngine: Speaks interview question via system audio
+    activate AudioEngine
+    Note over AudioEngine: VAD captures 16 kHz stream & detects silence cutoff
+    AudioEngine->>LLM: Dispatches speaker-tagged transcript
+    deactivate AudioEngine
+    activate LLM
+    Note over LLM: Merges screen OCR + project codebase architecture
+    LLM-->>HUD: Streams token chunks in real time via Tauri IPC
+    deactivate LLM
     activate HUD
-    HUD->>Candidate: Displays hints, KaTeX math analysis & code
-    Candidate->>HUD: Triggers Stealth Typer (Ctrl + Shift + T)
-    HUD-->>Candidate: Emulates keystrokes into focused IDE assessment
+    Note over HUD: Formats KaTeX algorithmic complexity & code
+    HUD-->>Interviewer: Candidate triggers Stealth Typer (Ctrl + Shift + T) to inject code
     deactivate HUD
 ```
 
