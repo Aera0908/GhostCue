@@ -10,7 +10,7 @@
   <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19.0-61dafb.svg?logo=react&logoColor=black" alt="React" /></a>
   <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.6-3178c6.svg?logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078d4.svg?logo=windows&logoColor=white" alt="Platform" />
 </p>
 
 <p align="center">
@@ -234,9 +234,7 @@ All shortcuts can be reconfigured or customized in the Settings panel:
 1. **Node.js**: v18 or later (v22+ LTS recommended)
 2. **Rust & Cargo**: v1.75 or later (`rustup`)
 3. **Platform Build Tools**:
-   * **Windows:** Visual Studio 2022 C++ Build Tools (including Windows 10/11 SDK)
-   * **macOS:** Xcode Command Line Tools
-   * **Linux:** `libwebkit2gtk-4.1-dev`, `libasound2-dev`, `libssl-dev`
+   * **Windows 10 / 11:** Visual Studio 2022 C++ Build Tools (with Windows 10/11 SDK)
 
 ### Installation
 ```bash
@@ -273,8 +271,8 @@ Compiled setup bundles and binaries are placed into `src-tauri/target/release/bu
 Settings can be managed either through the in-app interface (`Ctrl + ,`) or by configuring the `.env` file:
 
 ```env
-# Primary LLM Provider: "gemini" | "ollama" | "openai" | "anthropic" | "groq"
-LLM_PROVIDER=openai
+# Primary LLM Provider: "gemini" | "openai" | "anthropic" | "deepseek" | "groq" | "ollama" | "custom"
+LLM_PROVIDER=gemini
 
 # Google Gemini
 GEMINI_API_KEY=
@@ -289,12 +287,21 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
+# DeepSeek
+DEEPSEEK_API_KEY=
+DEEPSEEK_MODEL=deepseek-chat
+
 # Groq
 GROQ_API_KEY=
 
 # Ollama (Local & Offline)
 OLLAMA_ENDPOINT=http://localhost:11434
 OLLAMA_MODEL=qwen2.5-coder:7b
+
+# Custom / OpenRouter / Mistral / xAI / Cohere / Qwen
+CUSTOM_ENDPOINT=https://openrouter.ai/api/v1
+CUSTOM_API_KEY=
+CUSTOM_MODEL=deepseek/deepseek-r1
 
 # Smart Model Routing (routes complex coding/vision tasks to flagship models)
 SMART_MODEL_ROUTING=true
