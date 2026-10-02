@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Cpu, Cloud, Download, CheckCircle, Key, Server, Globe, CheckSquare, Square, Sparkles, Zap } from "lucide-react";
+import { Cpu, Cloud, Download, CheckCircle, Key, Server, Globe, CheckSquare, Square, Zap, ExternalLink } from "lucide-react";
+import { OpenRouterIcon, GeminiIcon, OpenAiIcon, ClaudeIcon, DeepSeekIcon, GroqIcon, OllamaIcon, CustomApiIcon } from "../common/ProviderIcons";
 import { AppConfig } from "../../types/config";
 import { TauriApi } from "../../services/tauriApi";
 import { useTranslation } from "../../i18n";
@@ -13,6 +14,8 @@ interface WhisperModelInfo {
   name: string;
   url: string;
   size: string;
+  downloaded?: boolean;
+  path?: string;
 }
 
 const GEMINI_MODELS = [
@@ -111,6 +114,17 @@ const DEEPSEEK_MODELS = [
   { id: "deepseek-reasoner", name: "DeepSeek Reasoner (R1)", desc: "Frontier chain-of-thought reasoning, math & architecture" },
   { id: "deepseek-v3", name: "DeepSeek V3", desc: "Flagship base MoE model" },
   { id: "deepseek-r1", name: "DeepSeek R1", desc: "Full open reasoning model" },
+];
+
+const OPENROUTER_MODELS = [
+  { id: "deepseek/deepseek-chat", name: "DeepSeek V3", desc: "Flagship 671B MoE • Ultra fast & cost-efficient" },
+  { id: "deepseek/deepseek-r1", name: "DeepSeek R1", desc: "Frontier reasoning & chain-of-thought coding" },
+  { id: "anthropic/claude-3.7-sonnet", name: "Claude 3.7 Sonnet", desc: "Hybrid reasoning with extended thinking" },
+  { id: "openai/gpt-4o", name: "OpenAI GPT-4o", desc: "Multimodal flagship model" },
+  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", desc: "Ultra-fast multimodal inference & coding" },
+  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", desc: "Next-gen complex reasoning & system design" },
+  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B Instruct", desc: "Meta open-weights flagship" },
+  { id: "qwen/qwen-2.5-coder-32b-instruct", name: "Qwen 2.5 Coder 32B", desc: "Alibaba coding powerhouse" },
 ];
 
 interface CustomPreset {
@@ -227,12 +241,33 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [customOllamaInput, setCustomOllamaInput] = useState(
     () => !!config.ollama_model && !OLLAMA_MODELS.some((m) => m.id === config.ollama_model)
   );
+  const [customOpenRouterInput, setCustomOpenRouterInput] = useState(
+    () => !!(config.openrouter_model || config.custom_model) && !OPENROUTER_MODELS.some((m) => m.id === (config.openrouter_model || config.custom_model))
+  );
 
   useEffect(() => {
     TauriApi.getAvailableWhisperModels().then((models) => {
       setWhisperModels(models as WhisperModelInfo[]);
     });
   }, []);
+
+  const handleSelectWhisper = async (m: WhisperModelInfo) => {
+    onChange("whisper_model_size", m.name);
+    if (m.path) onChange("whisper_model_path", m.path);
+    onChange("stt_provider", "local_whisper");
+    try {
+      const current = await TauriApi.getConfig();
+      await TauriApi.saveConfig({
+        ...current,
+        whisper_model_size: m.name,
+        whisper_model_path: m.path || current.whisper_model_path,
+        stt_provider: "local_whisper",
+      });
+      setDownloadSuccess(`Active local model switched to: ${m.name}`);
+    } catch (e) {
+      console.warn("Auto save on model select:", e);
+    }
+  };
 
   const handleDownloadWhisper = async (modelName: string) => {
     setDownloadingModel(modelName);
@@ -244,7 +279,19 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       onChange("whisper_model_path", path);
       onChange("whisper_model_size", modelName);
       onChange("stt_provider", "local_whisper");
-      setDownloadSuccess(`${modelName} downloaded & active!`);
+      try {
+        const current = await TauriApi.getConfig();
+        await TauriApi.saveConfig({
+          ...current,
+          whisper_model_size: modelName,
+          whisper_model_path: path,
+          stt_provider: "local_whisper",
+        });
+      } catch {}
+      setWhisperModels((prev) =>
+        prev.map((m) => (m.name === modelName ? { ...m, downloaded: true, path } : m))
+      );
+      setDownloadSuccess(`${modelName} downloaded & selected as active model!`);
     } catch (err: any) {
       alert(`Failed to download model: ${err}`);
     } finally {
@@ -323,56 +370,60 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         </div>
 
         {/* Engine Switcher */}
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => onChange("stt_provider", "cloud_whisper")}
-            className={`p-3 text-left rounded-xl border transition-all ${
-              config.stt_provider === "cloud_whisper" || config.stt_provider === "openai_whisper" || (!config.stt_provider && config.openai_api_key)
-                ? "bg-slate-800 border-sky-500/60 text-slate-100 font-bold shadow-sm"
-                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <span className="block font-bold text-emerald-400 text-xs">Cloud Whisper (OpenAI)</span>
-            <span className="text-[11px] text-slate-400">Uses API key • Instant</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onChange("stt_provider", "deepgram")}
-            className={`p-3 text-left rounded-xl border transition-all ${
-              config.stt_provider === "deepgram"
-                ? "bg-slate-800 border-sky-500/60 text-slate-100 font-bold shadow-sm"
-                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <span className="block font-bold text-slate-100 text-xs">Deepgram Nova-2</span>
-            <span className="text-[11px] text-slate-400">Ultra-fast streaming</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onChange("stt_provider", "local_whisper")}
-            className={`p-3 text-left rounded-xl border transition-all ${
-              config.stt_provider === "local_whisper"
-                ? "bg-slate-800 border-sky-500/60 text-slate-100 font-bold shadow-sm"
-                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <span className="block font-bold text-slate-100 text-xs">Local Whisper GGML</span>
-            <span className="text-[11px] text-slate-400">100% Offline download</span>
-          </button>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[
+            { id: "local_whisper", label: "Local Whisper", sub: "Offline • 100% Free", icon: Cpu, badge: "Recommended" },
+            { id: "groq", label: "Groq Whisper", sub: "Free API • ~200ms", icon: GroqIcon, badge: "Free" },
+            { id: "openrouter", label: "OpenRouter Audio", sub: "Gemini 2.5 Flash", icon: OpenRouterIcon },
+            { id: "deepgram", label: "Deepgram", sub: "Nova-2 Streaming", icon: Zap },
+            { id: "cloud_whisper", label: "OpenAI Whisper", sub: "Whisper-1 API", icon: OpenAiIcon },
+          ].map((prov) => {
+            const Icon = prov.icon;
+            const isSelected = config.stt_provider === prov.id || (!config.stt_provider && prov.id === "local_whisper");
+            return (
+              <button
+                key={prov.id}
+                type="button"
+                onClick={() => onChange("stt_provider", prov.id)}
+                className={`p-3 text-left rounded-xl border transition-all relative flex flex-col justify-between ${
+                  isSelected
+                    ? "bg-slate-800 border-sky-500/80 text-slate-100 font-bold shadow-[0_0_12px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/50"
+                    : "bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Icon className="w-4 h-4 text-sky-400" />
+                    {prov.badge && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                        {prov.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`block font-bold text-xs ${isSelected ? "text-slate-100" : "text-slate-300"}`}>
+                    {prov.label}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1">{prov.sub}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Local Whisper Options */}
-        {config.stt_provider === "local_whisper" && (
+        {(config.stt_provider === "local_whisper" || !config.stt_provider) && (
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
-            <label className="block text-slate-200 font-bold text-xs uppercase">
-              {t.settings.whisperModel}
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-slate-200 font-bold text-xs uppercase">
+                {t.settings.whisperModel} (100% Offline GGML)
+              </label>
+              <span className="text-[11px] text-sky-400 font-medium">
+                Active: <strong>{config.whisper_model_size || "base.en"}</strong>
+              </span>
+            </div>
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {whisperModels.map((m) => {
-                const isSelected = config.whisper_model_size === m.name;
+                const isSelected = (config.whisper_model_size || "base.en") === m.name;
                 const isDownloading = downloadingModel === m.name;
 
                 return (
@@ -388,25 +439,44 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-100 uppercase text-xs">{m.name}</span>
                         <span className="text-slate-400 text-xs">({m.size})</span>
+                        {m.name === "base.en" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                            Recommended
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {isSelected && !isDownloading && (
-                          <span className="flex items-center gap-1 text-xs text-emerald-400 font-bold">
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>{t.common.active}</span>
+                        {isDownloading ? (
+                          <span className="text-xs text-sky-400 font-semibold flex items-center gap-1.5">
+                            <Download className="w-3.5 h-3.5 animate-bounce" />
+                            <span>{t.settings.downloading}</span>
                           </span>
+                        ) : m.downloaded ? (
+                          isSelected ? (
+                            <span className="flex items-center gap-1 px-3 py-1 bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 rounded-lg text-xs font-bold shadow-sm">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>✓ Selected</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectWhisper(m)}
+                              className="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-all shadow-sm"
+                            >
+                              Select
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadWhisper(m.name)}
+                            className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-lg transition-colors border border-slate-700"
+                          >
+                            <Download className="w-3.5 h-3.5 text-sky-400" />
+                            <span>{t.settings.downloadModel}</span>
+                          </button>
                         )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadWhisper(m.name)}
-                          disabled={isDownloading}
-                          className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-100 disabled:opacity-40 text-xs font-semibold rounded-lg transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>{isDownloading ? t.settings.downloading : t.settings.downloadModel}</span>
-                        </button>
                       </div>
                     </div>
 
@@ -419,7 +489,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                           />
                         </div>
                         <span className="text-[11px] text-slate-400">
-                          Downloading model weights from HuggingFace...
+                          Downloading weights ({downloadProgress}%)...
                         </span>
                       </div>
                     )}
@@ -431,6 +501,69 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             {downloadSuccess && (
               <p className="text-xs text-emerald-400 mt-1 font-bold">{downloadSuccess}</p>
             )}
+          </div>
+        )}
+
+        {/* Groq Whisper Options */}
+        {config.stt_provider === "groq" && (
+          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 font-bold text-slate-100 uppercase text-xs">
+                <GroqIcon className="w-4 h-4" />
+                <span>Groq API Key (100% Free)</span>
+              </label>
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1"
+              >
+                <span>Get free Groq key</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <input
+              type="password"
+              value={config.groq_api_key || ""}
+              onChange={(e) => onChange("groq_api_key", e.target.value)}
+              placeholder="gsk_..."
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 font-semibold">Model:</span>
+              <select
+                value={config.groq_whisper_model || "whisper-large-v3-turbo"}
+                onChange={(e) => onChange("groq_whisper_model", e.target.value)}
+                className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 text-xs font-mono"
+              >
+                <option value="whisper-large-v3-turbo">whisper-large-v3-turbo (Fastest, ~200ms)</option>
+                <option value="whisper-large-v3">whisper-large-v3 (Standard High Precision)</option>
+              </select>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Groq Cloud Whisper runs Whisper Large on specialized LPU hardware at ~200ms response time with a generous free tier.
+            </p>
+          </div>
+        )}
+
+        {/* OpenRouter Audio Options */}
+        {config.stt_provider === "openrouter" && (
+          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 font-bold text-slate-100 uppercase text-xs">
+                <OpenRouterIcon className="w-4 h-4" />
+                <span>OpenRouter Audio Model</span>
+              </label>
+              <span className="text-[11px] font-semibold text-emerald-400">
+                {config.openrouter_api_key ? "✓ OpenRouter Key Configured" : "⚠️ Key Missing"}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Uses your OpenRouter API key to transcribe speech via <strong>Google Gemini 2.5 Flash Audio</strong>.
+            </p>
+            <div className="p-2.5 bg-amber-950/30 border border-amber-500/40 rounded text-[11px] text-amber-200 leading-relaxed">
+              ⚠️ <strong>Note:</strong> OpenRouter requires at least $0.50 in credit balance for multimodal audio processing. If you have expired credits, use <strong>Local Whisper GGML</strong> (100% free offline) or <strong>Groq Whisper</strong> (100% free cloud API).
+            </div>
           </div>
         )}
 
@@ -450,6 +583,23 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             />
           </div>
         )}
+
+        {/* Cloud Whisper (OpenAI) Options */}
+        {config.stt_provider === "cloud_whisper" && (
+          <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
+            <label className="flex items-center gap-2 font-bold text-slate-100 uppercase">
+              <Key className="w-4 h-4 text-emerald-400" />
+              <span>OpenAI API Key (Whisper-1)</span>
+            </label>
+            <input
+              type="password"
+              value={config.openai_api_key}
+              onChange={(e) => onChange("openai_api_key", e.target.value)}
+              placeholder="sk-..."
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 text-xs font-mono"
+            />
+          </div>
+        )}
       </div>
 
       {/* --- LLM Provider Section --- */}
@@ -460,15 +610,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         </h4>
 
         {/* Provider Switcher */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {[
-            { id: "gemini", label: "Google Gemini", icon: Sparkles, color: "text-sky-400" },
-            { id: "openai", label: "OpenAI GPT", icon: Cloud, color: "text-emerald-400" },
-            { id: "anthropic", label: "Claude", icon: Key, color: "text-amber-400" },
-            { id: "deepseek", label: "DeepSeek", icon: Sparkles, color: "text-blue-400" },
-            { id: "groq", label: "Groq LPU", icon: Cpu, color: "text-orange-400" },
-            { id: "ollama", label: "Ollama Local", icon: Server, color: "text-purple-400" },
-            { id: "custom", label: "OpenRouter / More", icon: Globe, color: "text-teal-400" },
+            { id: "openrouter", label: "OpenRouter", icon: OpenRouterIcon },
+            { id: "gemini", label: "Google Gemini", icon: GeminiIcon },
+            { id: "openai", label: "OpenAI GPT", icon: OpenAiIcon },
+            { id: "anthropic", label: "Claude", icon: ClaudeIcon },
+            { id: "deepseek", label: "DeepSeek", icon: DeepSeekIcon },
+            { id: "groq", label: "Groq LPU", icon: GroqIcon },
+            { id: "ollama", label: "Ollama Local", icon: OllamaIcon },
+            { id: "custom", label: "Custom / API", icon: CustomApiIcon },
           ].map((prov) => {
             const Icon = prov.icon;
             const isSelected = config.llm_provider === prov.id;
@@ -477,13 +628,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 key={prov.id}
                 type="button"
                 onClick={() => onChange("llm_provider", prov.id)}
-                className={`py-2 px-2.5 rounded-lg border text-center font-bold text-xs transition-all flex flex-col items-center justify-center gap-1 ${
+                className={`py-2.5 px-2 rounded-xl border text-center font-bold text-xs transition-all flex flex-col items-center justify-center gap-1.5 ${
                   isSelected
-                    ? "bg-slate-800 border-sky-500/60 text-white shadow-sm"
-                    : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                    ? "bg-slate-800 border-sky-500/70 text-white shadow-md ring-1 ring-sky-500/30"
+                    : "bg-slate-950 border-slate-800/90 text-slate-400 hover:text-slate-200 hover:border-slate-700"
                 }`}
               >
-                <Icon className={`w-4 h-4 ${prov.color}`} />
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <Icon className="w-4 h-4" />
+                </div>
                 <span className="text-[11px] truncate w-full">{prov.label}</span>
               </button>
             );
@@ -857,8 +1010,117 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           </div>
         )}
 
-        {/* Custom / OpenRouter / Mistral / xAI / Cohere / Qwen Settings */}
-        {(config.llm_provider === "custom" || config.llm_provider === "openrouter") && (
+        {/* OpenRouter AI Settings */}
+        {config.llm_provider === "openrouter" && (
+          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-teal-400" />
+                <span className="font-bold text-slate-100 uppercase text-xs">OpenRouter AI Configuration</span>
+              </div>
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-teal-400 hover:text-teal-300 flex items-center gap-1 font-medium transition-colors"
+              >
+                <span>Get API Key</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            {/* STT Notice banner */}
+            <div className="p-2.5 bg-teal-950/40 border border-teal-800/60 rounded-lg text-xs text-teal-200/90 leading-relaxed">
+              <span className="font-bold text-teal-300">💡 Important: </span>
+              OpenRouter powers your interview answers, reasoning & coding assistance. OpenRouter does not provide audio transcription. For live Speech-to-Text (STT), use <strong className="text-white">Deepgram (free credits)</strong> or <strong className="text-white">Groq Whisper (free tier)</strong> in the STT Engine section above.
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 font-bold text-slate-100 mb-1.5 uppercase text-xs">
+                <Key className="w-4 h-4 text-teal-400" />
+                <span>OpenRouter API Key</span>
+              </label>
+              <input
+                type="password"
+                value={config.openrouter_api_key || config.custom_api_key || ""}
+                onChange={(e) => {
+                  onChange("openrouter_api_key", e.target.value);
+                  onChange("custom_api_key", e.target.value);
+                }}
+                placeholder="sk-or-v1-..."
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-teal-400"
+              />
+            </div>
+
+            {/* OpenRouter Model Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="font-bold text-slate-100 uppercase text-xs">
+                  OpenRouter Model
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomOpenRouterInput(!customOpenRouterInput)}
+                  className="text-[11px] text-teal-400 hover:text-teal-300 transition-colors"
+                >
+                  {customOpenRouterInput ? "Choose from list" : "Enter custom model ID"}
+                </button>
+              </div>
+
+              {!customOpenRouterInput ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {OPENROUTER_MODELS.map((m) => {
+                    const activeModel = config.openrouter_model || config.custom_model || "deepseek/deepseek-chat";
+                    const isSelected = activeModel === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          onChange("openrouter_model", m.id);
+                          onChange("custom_model", m.id);
+                        }}
+                        className={`p-2.5 text-left rounded-lg border transition-all ${
+                          isSelected
+                            ? "bg-teal-950/70 border-teal-500/70 text-slate-100 shadow-sm"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`font-bold text-xs ${isSelected ? "text-teal-300" : "text-slate-200"}`}>
+                            {m.name}
+                          </span>
+                          {isSelected && <CheckCircle className="w-3.5 h-3.5 text-teal-400" />}
+                        </div>
+                        <p className="text-[11px] text-slate-400 line-clamp-1">{m.desc}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{m.id}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={config.openrouter_model || config.custom_model || ""}
+                    onChange={(e) => {
+                      onChange("openrouter_model", e.target.value);
+                      onChange("custom_model", e.target.value);
+                    }}
+                    placeholder="e.g. deepseek/deepseek-r1, anthropic/claude-3.7-sonnet, openai/gpt-4o"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:border-teal-400"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Enter any valid model identifier from <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer" className="text-teal-400 underline">openrouter.ai/models</a>
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Custom OpenAI-Compatible (Mistral, xAI, Cohere, Bedrock, etc.) Settings */}
+        {config.llm_provider === "custom" && (
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3.5">
             <div>
               <div className="flex items-center justify-between mb-2">

@@ -13,6 +13,7 @@ interface TranscriptStreamProps {
   aiLogs?: AiLogEntry[];
   onSelectAiAnswer?: (logId: string) => void;
   onExportTxt?: () => void;
+  fontSize?: number;
 }
 
 export const isInterviewerQuestion = (text: string): boolean => {
@@ -101,6 +102,7 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
   aiLogs = [],
   onSelectAiAnswer,
   onExportTxt,
+  fontSize = 14,
 }) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -337,7 +339,10 @@ export const TranscriptStream: React.FC<TranscriptStreamProps> = ({
                 </div>
 
                 {/* Speech Text */}
-                <p className="leading-relaxed text-sm text-slate-100 whitespace-pre-wrap font-normal select-text">
+                <p
+                  className="leading-relaxed text-slate-100 whitespace-pre-wrap font-normal select-text"
+                  style={{ fontSize: `${fontSize}px` }}
+                >
                   {turn.text}
                 </p>
               </div>

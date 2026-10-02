@@ -1,19 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use futures_util::StreamExt;
-use log::info;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use log::{info, warn};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct ChatMessage {
     role: String,
     content: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
@@ -43,6 +43,19 @@ struct StreamChunk {
     choices: Option<Vec<StreamChoice>>,
 }
 
+#[derive(Deserialize, Debug)]
+struct OpenAiErrorResponse {
+    error: Option<OpenAiErrorDetail>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenAiErrorDetail {
+    message: Option<String>,
+    #[serde(rename = "type")]
+    error_type: Option<String>,
+    code: Option<serde_json::Value>,
+}
+
 pub struct OpenAiClient {
     base_url: String,
     api_key: String,
@@ -58,10 +71,87 @@ impl OpenAiClient {
             api_key,
             model,
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .read_timeout(std::time::Duration::from_secs(120))
+                .tcp_keepalive(std::time::Duration::from_secs(30))
+                .pool_idle_timeout(std::time::Duration::from_secs(60))
                 .build()
                 .unwrap_or_default(),
         }
+    }
+
+    /// Parses OpenAI error body into (is_retriable, is_quota_exceeded, clean_error_message)
+    fn parse_api_error(status: reqwest::StatusCode, body: &str) -> (bool, bool, String) {
+        let parsed: Option<OpenAiErrorResponse> = serde_json::from_str(body).ok();
+        let detail = parsed.as_ref().and_then(|p| p.error.as_ref());
+
+        let raw_msg = detail
+            .and_then(|d| d.message.as_deref())
+            .unwrap_or(body.trim());
+        let err_type = detail.and_then(|d| d.error_type.as_deref()).unwrap_or("");
+        let err_code = detail
+            .and_then(|d| d.code.as_ref())
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+
+        // 1. Permanent Quota / Billing limit / Payment Required (OpenAI & OpenRouter)
+        if status == reqwest::StatusCode::PAYMENT_REQUIRED
+            || err_code.contains("insufficient_quota")
+            || err_code.contains("402")
+            || err_type.contains("insufficient_quota")
+            || raw_msg.to_lowercase().contains("insufficient credits")
+            || raw_msg.to_lowercase().contains("exceeded your current quota")
+        {
+            return (
+                false,
+                true,
+                format!("LLM provider account has insufficient credits or quota. Please check your credit balance at openrouter.ai or platform.openai.com: {}", raw_msg),
+            );
+        }
+
+        // 2. Auth error
+        if status == reqwest::StatusCode::UNAUTHORIZED
+            || status == reqwest::StatusCode::FORBIDDEN
+            || err_code.contains("invalid_api_key")
+        {
+            return (
+                false,
+                false,
+                format!("Invalid API key. Please check your API key in Settings: {}", raw_msg),
+            );
+        }
+
+        // 3. Rate limits (429) - Retriable
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || err_code.contains("rate_limit_exceeded")
+            || err_type.contains("tokens")
+            || err_type.contains("requests")
+        {
+            let clean_msg = if !raw_msg.is_empty() {
+                format!("OpenAI Rate Limit: {}", raw_msg)
+            } else {
+                "OpenAI rate limit temporarily reached. Cooldown in progress...".to_string()
+            };
+            return (true, false, clean_msg);
+        }
+
+        // 4. Server errors (500, 502, 503, 504, 529) - Retriable
+        if status.is_server_error() || status.as_u16() == 529 {
+            let clean_msg = if !raw_msg.is_empty() && raw_msg.len() < 200 {
+                format!("OpenAI Server Notice ({}): {}", status.as_u16(), raw_msg)
+            } else {
+                format!("OpenAI server temporarily overloaded (HTTP {}). Retrying...", status.as_u16())
+            };
+            return (true, false, clean_msg);
+        }
+
+        // 5. Other client error
+        let clean_msg = if !raw_msg.is_empty() {
+            format!("OpenAI error: {}", raw_msg)
+        } else {
+            format!("OpenAI returned HTTP status {}", status)
+        };
+        (false, false, clean_msg)
     }
 
     pub async fn stream_chat(
@@ -89,6 +179,15 @@ impl OpenAiClient {
                 .map_err(|e| format!("Invalid API key header: {}", e))?,
         );
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+        if self.base_url.contains("openrouter.ai") {
+            if let Ok(ref_hdr) = HeaderValue::from_str("https://ghostcue.app") {
+                headers.insert(HeaderName::from_static("http-referer"), ref_hdr);
+            }
+            if let Ok(title_hdr) = HeaderValue::from_str("GhostCue") {
+                headers.insert(HeaderName::from_static("x-title"), title_hdr);
+            }
+        }
 
         let has_image = image_data.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
 
@@ -130,7 +229,7 @@ impl OpenAiClient {
             serde_json::Value::String(user_prompt)
         };
 
-        let body = ChatCompletionRequest {
+        let mut body = ChatCompletionRequest {
             model: effective_model.clone(),
             messages: vec![
                 ChatMessage {
@@ -150,33 +249,132 @@ impl OpenAiClient {
 
         info!("Sending streaming chat completion to {} (model: {})", url, effective_model);
 
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("Request to {} failed: {}", url, e))?;
+        // Automatic retry loop with exponential backoff and jitter for transient 429 / 5xx / network glitches
+        let max_retries = 3;
+        let mut response: Option<reqwest::Response> = None;
+        let mut last_error_msg = String::new();
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let err_text = response.text().await.unwrap_or_default();
-            log::warn!("OpenAI API error status {}: {}", status, err_text);
-            return Err(format!("API returned error status {}: {}", status, err_text));
+        for attempt in 0..=max_retries {
+            if abort_flag.load(Ordering::SeqCst) {
+                return Err("Generation cancelled".to_string());
+            }
+
+            let send_res = self
+                .client
+                .post(&url)
+                .headers(headers.clone())
+                .json(&body)
+                .send()
+                .await;
+
+            match send_res {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        response = Some(resp);
+                        break;
+                    }
+
+                    // Extract response error body
+                    let headers_clone = resp.headers().clone();
+                    let err_text = resp.text().await.unwrap_or_default();
+                    let (is_retriable, is_quota_exceeded, clean_msg) = Self::parse_api_error(status, &err_text);
+                    warn!("OpenAI API error status {} (attempt {}/{}): {}", status, attempt + 1, max_retries + 1, clean_msg);
+                    last_error_msg = clean_msg;
+
+                    if !is_retriable || is_quota_exceeded || attempt >= max_retries {
+                        return Err(last_error_msg);
+                    }
+
+                    // If token rate limit, reduce max_tokens on retry to fit within TPM window
+                    if (status == reqwest::StatusCode::TOO_MANY_REQUESTS || err_text.contains("tokens")) && body.max_tokens == Some(4096) {
+                        body.max_tokens = Some(2048);
+                    }
+
+                    // Calculate backoff wait
+                    let retry_after_secs = headers_clone
+                        .get(RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok());
+
+                    let wait_ms = if let Some(secs) = retry_after_secs {
+                        (secs * 1000).clamp(800, 6000)
+                    } else {
+                        match attempt {
+                            0 => 1200,
+                            1 => 2500,
+                            _ => 4000,
+                        }
+                    };
+
+                    info!("Retrying OpenAI request in {}ms (attempt {}/{})...", wait_ms, attempt + 1, max_retries);
+
+                    // Sleep in 100ms intervals to respond immediately to abort_flag
+                    let intervals = wait_ms / 100;
+                    for _ in 0..intervals {
+                        if abort_flag.load(Ordering::SeqCst) {
+                            return Err("Generation cancelled".to_string());
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                }
+                Err(e) => {
+                    warn!("Network request to {} failed (attempt {}/{}): {}", url, attempt + 1, max_retries + 1, e);
+                    last_error_msg = format!("Network connection failed: {}", e);
+
+                    if attempt >= max_retries {
+                        return Err(last_error_msg);
+                    }
+
+                    let wait_ms = match attempt {
+                        0 => 800,
+                        1 => 1800,
+                        _ => 3000,
+                    };
+
+                    let intervals = wait_ms / 100;
+                    for _ in 0..intervals {
+                        if abort_flag.load(Ordering::SeqCst) {
+                            return Err("Generation cancelled".to_string());
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                }
+            }
         }
 
-        let mut stream = response.bytes_stream();
+        let resp = match response {
+            Some(r) => r,
+            None => {
+                return Err(if !last_error_msg.is_empty() {
+                    last_error_msg
+                } else {
+                    "Failed to communicate with OpenAI after multiple attempts. Please check network connection.".to_string()
+                });
+            }
+        };
+
+        let mut stream = resp.bytes_stream();
         let mut full_text = String::new();
         let mut buffer = String::new();
 
         while let Some(chunk_res) = stream.next().await {
             if abort_flag.load(Ordering::SeqCst) {
                 info!("Cloud LLM streaming aborted by user.");
-                break;
+                return Err("Generation cancelled".to_string());
             }
 
-            let chunk = chunk_res.map_err(|e| format!("Stream error: {}", e))?;
+            let chunk = match chunk_res {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("OpenAI stream chunk error: {}", e);
+                    if !full_text.is_empty() {
+                        // Return already generated text if network drops mid-stream rather than failing completely
+                        break;
+                    }
+                    return Err(format!("Stream error: {}", e));
+                }
+            };
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
             while let Some(newline_pos) = buffer.find('\n') {
@@ -190,6 +388,22 @@ impl OpenAiClient {
                 if let Some(json_payload) = trimmed.strip_prefix("data:").map(|s| s.trim()) {
                     if json_payload == "[DONE]" {
                         continue;
+                    }
+
+                    // Check for inline error payload in the SSE stream
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_payload) {
+                        if let Some(err_obj) = val.get("error") {
+                            let err_msg = err_obj
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Stream encountered an error");
+                            warn!("OpenAI stream returned error: {}", err_msg);
+                            if full_text.is_empty() {
+                                return Err(format!("OpenAI error: {}", err_msg));
+                            } else {
+                                break;
+                            }
+                        }
                     }
 
                     if let Ok(parsed) = serde_json::from_str::<StreamChunk>(json_payload) {
@@ -208,6 +422,14 @@ impl OpenAiClient {
                     }
                 }
             }
+        }
+
+        if abort_flag.load(Ordering::SeqCst) {
+            return Err("Generation cancelled".to_string());
+        }
+
+        if full_text.trim().is_empty() {
+            return Err("OpenAI returned an empty response. Please try again.".to_string());
         }
 
         Ok(full_text)

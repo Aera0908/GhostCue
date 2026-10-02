@@ -12,7 +12,7 @@ import { SettingsModal } from "./components/settings/SettingsModal";
 import { StartupSessionScreen } from "./components/session/StartupSessionScreen";
 import { DirectoryPermissionModal } from "./components/common/DirectoryPermissionModal";
 import { exportSessionAsTxt } from "./utils/exportTxt";
-import { Sparkles, Maximize, ShieldCheck, ShieldAlert, Pause, Play } from "lucide-react";
+import { Sparkles, Maximize, Minus, ShieldCheck, ShieldAlert, Pause, Play } from "lucide-react";
 import { I18nProvider } from "./i18n";
 
 const STORAGE_SESSIONS_KEY = "ghostcue_interview_sessions";
@@ -238,6 +238,8 @@ export const App: React.FC = () => {
         return cfg.openai_model || "llama-3.3-70b-versatile";
       case "deepseek":
         return cfg.deepseek_model || cfg.custom_model || "deepseek-chat";
+      case "openrouter":
+        return cfg.openrouter_model || cfg.custom_model || "deepseek/deepseek-chat";
       default:
         return cfg.custom_model || cfg.llm_provider;
     }
@@ -326,6 +328,21 @@ export const App: React.FC = () => {
     layoutModeRef.current = layoutMode;
   }, [layoutMode]);
 
+  const micMutedRef = useRef<boolean>(micMuted);
+  useEffect(() => {
+    micMutedRef.current = micMuted;
+  }, [micMuted]);
+
+  const loopbackMutedRef = useRef<boolean>(loopbackMuted);
+  useEffect(() => {
+    loopbackMutedRef.current = loopbackMuted;
+  }, [loopbackMuted]);
+
+  const activeSessionIdRef = useRef<string | null>(activeSessionId);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
   const lastAutoAnsweredTurnRef = useRef<string | null>(null);
   const handleTriggerActionRef = useRef<((action: string, customQuery?: string, isManualInput?: boolean, preloadedImage?: string) => Promise<void>) | null>(null);
   const autoTriggerTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -333,6 +350,7 @@ export const App: React.FC = () => {
   const liveOcrTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastScreenHashRef = useRef<string | null>(null);
   const lastPromptedProblemTextRef = useRef<string | null>(null);
+  const generationCounterRef = useRef<number>(0);
 
   const maybeAutoTrigger = (turnText: string, turnId?: string, speaker?: string) => {
     if (!inLiveHudRef.current || isPausedRef.current) return;
@@ -348,10 +366,8 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (isStreamingRef.current) return;
-
     const trimmed = turnText.trim();
-    if (trimmed.length < 5) return;
+    if (trimmed.length < 3) return;
 
     const turnKey = turnId || trimmed;
     if (lastAutoAnsweredTurnRef.current === turnKey) return;
@@ -359,15 +375,22 @@ export const App: React.FC = () => {
     // Check if the current speech contains an interviewer question or prompt
     if (!isInterviewerQuestion(trimmed)) return;
 
+    // If currently streaming an answer, remember this pending question so it triggers once current answer completes
+    if (isStreamingRef.current) {
+      pendingAutoTriggerTurnRef.current = { text: trimmed, turnId: turnKey };
+      return;
+    }
+
     // Store latest question text
     pendingAutoTriggerTurnRef.current = { text: trimmed, turnId: turnKey };
 
-    // Reset debounce timer: wait auto_trigger_delay_ms of conversational pause to ensure interviewer finished full thought
+    // Reset debounce timer: wait conversational pause to ensure interviewer finished full thought
     if (autoTriggerTimerRef.current) {
       clearTimeout(autoTriggerTimerRef.current);
     }
 
-    const delayMs = Math.max(300, configRef.current.auto_trigger_delay_ms || 1500);
+    const configuredDelay = Number(configRef.current.auto_trigger_delay_ms) || 1500;
+    const delayMs = Math.max(50, Math.min(configuredDelay, 5000));
 
     autoTriggerTimerRef.current = setTimeout(() => {
       autoTriggerTimerRef.current = null;
@@ -379,7 +402,7 @@ export const App: React.FC = () => {
       if (isStreamingRef.current) return;
 
       const fullQuestion = pending.text.trim();
-      if (fullQuestion.length < 6) return;
+      if (fullQuestion.length < 3) return;
       if (!isInterviewerQuestion(fullQuestion)) return;
       if (lastAutoAnsweredTurnRef.current === pending.turnId) return;
 
@@ -410,8 +433,8 @@ export const App: React.FC = () => {
 
         const u1 = await TauriApi.onTranscript((seg) => {
           if (!inLiveHudRef.current || isPausedRef.current) return;
-          if (micMuted && seg.speaker !== "Interviewer") return;
-          if (loopbackMuted && seg.speaker === "Interviewer") return;
+          if (micMutedRef.current && seg.speaker !== "Interviewer") return;
+          if (loopbackMutedRef.current && seg.speaker === "Interviewer") return;
 
           setTranscripts((prev) => {
             const idx = prev.findIndex((t) => t.id === seg.id);
@@ -423,10 +446,11 @@ export const App: React.FC = () => {
               updatedList = [...prev, seg];
             }
 
-            if (activeSessionId) {
+            const currentSessionId = activeSessionIdRef.current;
+            if (currentSessionId) {
               updateSessionsState((sessList) =>
                 sessList.map((s) =>
-                  s.id === activeSessionId
+                  s.id === currentSessionId
                     ? { ...s, transcripts: updatedList, lastActive: new Date().toISOString() }
                     : s
                 )
@@ -441,7 +465,7 @@ export const App: React.FC = () => {
         });
 
         const u2 = await TauriApi.onMicLevel((ev) => {
-          if (!inLiveHudRef.current || isPausedRef.current || micMuted) {
+          if (!inLiveHudRef.current || isPausedRef.current || micMutedRef.current) {
             setMicLevel(0);
             setMicActive(false);
           } else {
@@ -451,7 +475,7 @@ export const App: React.FC = () => {
         });
 
         const u3 = await TauriApi.onLoopbackLevel((ev) => {
-          if (!inLiveHudRef.current || isPausedRef.current || loopbackMuted) {
+          if (!inLiveHudRef.current || isPausedRef.current || loopbackMutedRef.current) {
             setLoopbackLevel(0);
             setLoopbackActive(false);
           } else {
@@ -499,7 +523,9 @@ export const App: React.FC = () => {
         const u7 = await TauriApi.onLlmError((ev) => {
           setIsStreaming(false);
           isStreamingRef.current = false;
-          setLlmError(ev.error);
+          if (ev.error && !ev.error.toLowerCase().includes("cancelled")) {
+            setLlmError(ev.error);
+          }
         });
 
         unlistens = [u1, u2, u3, u4, u5, u6, u7];
@@ -1048,6 +1074,25 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerAction = async (action: string, customQuery?: string, isManualInput: boolean = false, preloadedImage?: string) => {
+    // 1. Immediately clear any queued auto-trigger timers to avoid race conditions
+    if (autoTriggerTimerRef.current) {
+      clearTimeout(autoTriggerTimerRef.current);
+      autoTriggerTimerRef.current = null;
+    }
+    pendingAutoTriggerTurnRef.current = null;
+
+    // 2. Assign unique request sequence ID to ignore stale/aborted responses
+    const currentReqId = ++generationCounterRef.current;
+
+    // 3. If currently streaming, cancel the previous generation cleanly
+    if (isStreamingRef.current) {
+      try {
+        await TauriApi.cancelAiSuggestion();
+      } catch (cancelErr) {
+        console.warn("Cancel previous stream warning:", cancelErr);
+      }
+    }
+
     const hasQuery = customQuery && customQuery.trim().length > 0;
 
     let promptQuery = customQuery?.trim();
@@ -1133,6 +1178,7 @@ export const App: React.FC = () => {
 
     try {
       const res = await TauriApi.generateAiSuggestion(action, customQuery, pastAnswersPayload, base64Image);
+      if (currentReqId !== generationCounterRef.current) return;
       if (res && res.trim().length > 0) {
         setSuggestion((prev) => {
           if (!prev || prev.startsWith("📸") || prev.startsWith("🧠")) {
@@ -1143,11 +1189,27 @@ export const App: React.FC = () => {
         saveAiLogEntry(res, action, promptQuery);
       }
     } catch (err: any) {
-      console.error("AI Generation error:", err);
-      setLlmError(err?.toString() || "Failed to generate AI suggestion. Check API key in settings.");
+      if (currentReqId !== generationCounterRef.current) return;
+      const errMsg = err?.toString() || "Failed to generate AI suggestion. Check API key in settings.";
+      if (!errMsg.toLowerCase().includes("cancelled")) {
+        console.error("AI Generation error:", err);
+        setLlmError(errMsg);
+      }
     } finally {
-      setIsStreaming(false);
-      isStreamingRef.current = false;
+      if (currentReqId === generationCounterRef.current) {
+        setIsStreaming(false);
+        isStreamingRef.current = false;
+
+        // Check if an interviewer question arrived while we were streaming
+        const pending = pendingAutoTriggerTurnRef.current as { text: string; turnId: string } | null;
+        if (pending && pending.turnId !== lastAutoAnsweredTurnRef.current && configRef.current.auto_trigger_enabled) {
+          setTimeout(() => {
+            if (!isStreamingRef.current && inLiveHudRef.current && !isPausedRef.current) {
+              maybeAutoTrigger(pending.text, pending.turnId, "Interviewer");
+            }
+          }, 600);
+        }
+      }
     }
   };
 
@@ -1167,7 +1229,13 @@ export const App: React.FC = () => {
     isStreamingRef.current = false;
   };
 
+  const handleLiveConfigUpdate = (key: keyof AppConfig, value: any) => {
+    configRef.current = { ...configRef.current, [key]: value };
+    setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
   const handleSaveSettings = async (newConfig: AppConfig) => {
+    const oldConfig = configRef.current;
     const saved = await TauriApi.saveConfig(newConfig);
     configRef.current = saved;
     setConfig(saved);
@@ -1175,13 +1243,27 @@ export const App: React.FC = () => {
     await TauriApi.setAntiCapture(saved.anti_capture_enabled);
     if (inLiveHud) {
       await TauriApi.setFocusShield(saved.focus_shield_enabled ?? true);
-      try {
-        await TauriApi.stopAudioCapture();
-        await TauriApi.startAudioCapture();
-      } catch (err) {
-        console.warn("Audio restart error:", err);
+      const devicesChanged =
+        oldConfig.audio_input_device !== saved.audio_input_device ||
+        oldConfig.audio_output_device !== saved.audio_output_device ||
+        oldConfig.mic_enabled !== saved.mic_enabled ||
+        oldConfig.loopback_enabled !== saved.loopback_enabled;
+
+      if (devicesChanged) {
+        try {
+          await TauriApi.stopAudioCapture();
+          await new Promise((r) => setTimeout(r, 80));
+          await TauriApi.startAudioCapture();
+        } catch (err) {
+          console.warn("Audio restart error:", err);
+        }
       }
     }
+  };
+
+  const handleFontSizeChange = (size: number) => {
+    const clamped = Math.max(11, Math.min(22, size));
+    handleSaveSettings({ ...config, font_size: clamped });
   };
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -1209,6 +1291,7 @@ export const App: React.FC = () => {
             onClose={() => setIsSettingsOpen(false)}
             config={config}
             onSave={handleSaveSettings}
+            onLiveUpdate={handleLiveConfigUpdate}
             inLiveHud={inLiveHud}
           />
           <DirectoryPermissionModal
@@ -1294,6 +1377,17 @@ export const App: React.FC = () => {
 
             <button
               type="button"
+              onClick={async () => {
+                await TauriApi.minimizeWindow();
+              }}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-colors"
+              title="Minimize Window"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsCompactPill(false)}
               className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-colors"
               title="Expand Full HUD"
@@ -1315,6 +1409,7 @@ export const App: React.FC = () => {
         className="relative flex flex-col h-screen w-screen overflow-hidden select-none font-sans rounded-xl border border-slate-700/60 shadow-2xl"
         style={{
           backgroundColor: `rgba(11, 16, 27, ${opacity})`,
+          ['--hud-font-size' as any]: `${config.font_size || 14}px`,
         }}
       >
         {/* 1. HUD Header */}
@@ -1373,6 +1468,7 @@ export const App: React.FC = () => {
                 aiLogs={aiLogs}
                 onSelectAiAnswer={(logId) => setSelectedLogId(logId)}
                 onExportTxt={handleExportActiveSessionTxt}
+                fontSize={config.font_size || 14}
               />
             </div>
 
@@ -1404,6 +1500,8 @@ export const App: React.FC = () => {
                 onDeleteLog={handleDeleteAiLog}
                 onClearLogs={handleClearAiLogs}
                 onExportTxt={handleExportActiveSessionTxt}
+                fontSize={config.font_size || 14}
+                onFontSizeChange={handleFontSizeChange}
               />
             </div>
           </div>
@@ -1424,6 +1522,7 @@ export const App: React.FC = () => {
                 setLayoutMode("split");
               }}
               onExportTxt={handleExportActiveSessionTxt}
+              fontSize={config.font_size || 14}
             />
           </div>
         ) : (
@@ -1442,6 +1541,8 @@ export const App: React.FC = () => {
               onDeleteLog={handleDeleteAiLog}
               onClearLogs={handleClearAiLogs}
               onExportTxt={handleExportActiveSessionTxt}
+              fontSize={config.font_size || 14}
+              onFontSizeChange={handleFontSizeChange}
             />
           </div>
         )}
@@ -1459,6 +1560,7 @@ export const App: React.FC = () => {
           onClose={() => setIsSettingsOpen(false)}
           config={config}
           onSave={handleSaveSettings}
+          onLiveUpdate={handleLiveConfigUpdate}
           inLiveHud={inLiveHud}
         />
 

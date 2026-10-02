@@ -402,10 +402,8 @@ export const StartupSessionScreen: React.FC<StartupSessionScreenProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              try {
-                getCurrentWebviewWindow().minimize();
-              } catch (_) {}
+            onClick={async () => {
+              await TauriApi.minimizeWindow();
             }}
             className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400"
             title="Minimize"

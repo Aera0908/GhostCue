@@ -67,8 +67,13 @@ pub fn run() {
                     match event.id.as_ref() {
                         "toggle_show" => {
                             if let Some(window) = app.get_webview_window("main") {
+                                let is_minimized = window.is_minimized().unwrap_or(false);
                                 let is_visible = window.is_visible().unwrap_or(false);
-                                if is_visible {
+                                if is_minimized {
+                                    let _ = window.unminimize();
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                } else if is_visible {
                                     let _ = window.hide();
                                 } else {
                                     let _ = window.show();
@@ -111,8 +116,13 @@ pub fn run() {
                     } = event {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
+                            let is_minimized = window.is_minimized().unwrap_or(false);
                             let is_visible = window.is_visible().unwrap_or(false);
-                            if is_visible {
+                            if is_minimized {
+                                let _ = window.unminimize();
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            } else if is_visible {
                                 let _ = window.hide();
                             } else {
                                 let _ = window.show();
@@ -155,6 +165,8 @@ pub fn run() {
             window::toggle_hud_visibility,
             window::set_hud_opacity,
             window::start_dragging,
+            window::minimize_window,
+            window::unminimize_window,
             window::exit_app,
             // Config
             config::get_app_config,
@@ -165,6 +177,7 @@ pub fn run() {
             audio::stop_audio_capture,
             audio::get_audio_capture_status,
             audio::get_audio_levels,
+            audio::update_audio_vad_params,
             // STT
             stt::get_transcript_history,
             stt::clear_transcript_history,

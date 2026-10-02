@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldCheck, ShieldAlert, Command, Eye, Globe, Bot, Monitor } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Command, Eye, Globe, Bot, Monitor, Type } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { useTranslation, SupportedLocale } from "../../i18n";
 import { TauriApi } from "../../services/tauriApi";
@@ -209,6 +209,88 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, onChan
         <p className="text-[11px] text-slate-400 leading-relaxed pt-0.5">
           💡 <span className="font-semibold text-slate-300">Quick Toggle:</span> Press <kbd className="px-1.5 py-0.5 bg-slate-950 border border-slate-700 text-slate-200 font-mono text-[10px] rounded font-bold">Ctrl + Shift + O</kbd> anytime or click the Live OCR button in the HUD header to toggle autonomous screen scanning on/off.
         </p>
+      </div>
+
+      {/* Font Size & Readability Card (Slider) */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3 text-xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Type className="w-4 h-4 text-sky-400" />
+            <div>
+              <p className="font-bold text-slate-100 uppercase">{t.settings.fontSizeTitle || "Font Size & Readability"}</p>
+              <p className="text-[11px] text-slate-400">
+                {t.settings.fontSizeDesc || "Adjust text and code font size across AI answers, transcripts, and code viewer"}
+              </p>
+            </div>
+          </div>
+          <span className="font-mono font-bold text-xs px-2.5 py-1 bg-slate-950 border border-sky-500/40 text-sky-300 rounded-lg">
+            {config.font_size || 14}px
+          </span>
+        </div>
+
+        {/* Range Slider */}
+        <div className="space-y-1.5 pt-1">
+          <input
+            type="range"
+            min="11"
+            max="22"
+            step="1"
+            value={config.font_size || 14}
+            onChange={(e) => onChange("font_size", parseInt(e.target.value, 10))}
+            className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>Compact (11px)</span>
+            <span>Default (14px)</span>
+            <span>Large (18px)</span>
+            <span>Jumbo (22px)</span>
+          </div>
+        </div>
+
+        {/* Quick Presets */}
+        <div className="flex items-center gap-1.5 pt-1">
+          <span className="text-[11px] text-slate-400 font-medium mr-1">Presets:</span>
+          {[
+            { label: "Compact", size: 12 },
+            { label: "Default", size: 14 },
+            { label: "Medium", size: 16 },
+            { label: "Large", size: 18 },
+            { label: "Jumbo", size: 21 },
+          ].map((preset) => (
+            <button
+              key={preset.size}
+              type="button"
+              onClick={() => onChange("font_size", preset.size)}
+              className={`px-2.5 py-1 text-[11px] rounded-md border font-semibold transition-all ${
+                (config.font_size || 14) === preset.size
+                  ? "bg-sky-600 border-sky-500 text-white shadow-sm"
+                  : "bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              {preset.label} ({preset.size}px)
+            </button>
+          ))}
+        </div>
+
+        {/* Live Interactive Text & Code Preview Box */}
+        <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-lg space-y-2 select-none">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-800 pb-1 flex justify-between items-center">
+            <span>Live Typography Preview</span>
+            <span className="text-sky-400">Scale: {Math.round(((config.font_size || 14) / 14) * 100)}%</span>
+          </div>
+          <p
+            className="text-slate-200 leading-relaxed font-sans"
+            style={{ fontSize: `${config.font_size || 14}px` }}
+          >
+            "To solve this problem with optimal <span className="text-amber-300 font-mono font-medium">O(N log N)</span> time complexity, we can use a two-pointer approach over the sorted intervals..."
+          </p>
+          <div
+            className="p-2 bg-slate-900/90 rounded border border-slate-800 font-mono text-sky-300"
+            style={{ fontSize: `${Math.max(10, (config.font_size || 14) - 1)}px` }}
+          >
+            <code>const solve = (nums: number[]): number =&gt; nums.reduce((a, b) =&gt; a + b, 0);</code>
+          </div>
+        </div>
       </div>
 
       {/* Default Opacity Card */}

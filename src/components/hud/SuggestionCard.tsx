@@ -19,6 +19,7 @@ import {
   FileText,
   Monitor,
   Search,
+  Type,
 } from "lucide-react";
 import { IdeCodeStudio } from "./IdeCodeStudio";
 import { AiLogEntry } from "../../types/session";
@@ -38,6 +39,8 @@ interface SuggestionCardProps {
   onDeleteLog?: (id: string) => void;
   onClearLogs?: () => void;
   onExportTxt?: () => void;
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
 }
 
 export const SuggestionCard: React.FC<SuggestionCardProps> = ({
@@ -54,11 +57,14 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   onDeleteLog,
   onClearLogs,
   onExportTxt,
+  fontSize = 14,
+  onFontSizeChange,
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showLogList, setShowLogList] = useState(false);
+  const [showFontSlider, setShowFontSlider] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -244,6 +250,97 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
             </button>
           )}
 
+          {/* Quick Font Size Control Button & Floating Popover */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFontSlider(!showFontSlider)}
+              aria-label="Adjust font size"
+              className={`flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg border transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                showFontSlider
+                  ? "bg-sky-950/80 border-sky-500/60 text-sky-300"
+                  : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white"
+              }`}
+              title={`Adjust Font Size (${fontSize}px)`}
+            >
+              <Type className="w-3.5 h-3.5 text-sky-400" />
+              <span className="text-[11px] font-mono">{fontSize}px</span>
+            </button>
+
+            {showFontSlider && (
+              <div
+                role="dialog"
+                aria-label="Font size slider"
+                className="absolute right-0 top-9 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 w-64 space-y-2.5 font-sans"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-100">
+                    <Type className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Font Size</span>
+                  </div>
+                  <span className="font-mono font-bold text-xs px-2 py-0.5 bg-slate-950 border border-sky-500/40 text-sky-300 rounded">
+                    {fontSize}px
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onFontSizeChange && onFontSizeChange(Math.max(11, fontSize - 1))}
+                      disabled={fontSize <= 11}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-xs font-bold text-slate-200"
+                      title="Decrease font size"
+                    >
+                      A-
+                    </button>
+                    <input
+                      type="range"
+                      min="11"
+                      max="22"
+                      step="1"
+                      value={fontSize}
+                      onChange={(e) => onFontSizeChange && onFontSizeChange(parseInt(e.target.value, 10))}
+                      className="flex-1 h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onFontSizeChange && onFontSizeChange(Math.min(22, fontSize + 1))}
+                      disabled={fontSize >= 22}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-xs font-bold text-slate-200"
+                      title="Increase font size"
+                    >
+                      A+
+                    </button>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                    <span>11px</span>
+                    <span>14px</span>
+                    <span>18px</span>
+                    <span>22px</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 gap-1 border-t border-slate-800/80">
+                  {[12, 14, 16, 18, 20].map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => onFontSizeChange && onFontSizeChange(sz)}
+                      className={`flex-1 py-0.5 text-[10px] font-mono rounded border ${
+                        fontSize === sz
+                          ? "bg-sky-600 border-sky-500 text-white font-bold"
+                          : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {sz}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Expand Toggle */}
           <button
             type="button"
@@ -423,7 +520,10 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
             <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">
               {t.suggestion.interviewerPrompt}
             </span>
-            <p className="text-slate-100 font-medium select-text leading-relaxed mt-0.5">
+            <p
+              className="text-slate-100 font-medium select-text leading-relaxed mt-0.5"
+              style={{ fontSize: `${fontSize}px` }}
+            >
               "{displayQuestion}"
             </p>
           </div>
@@ -469,6 +569,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
             content={displayContent}
             isStreaming={isStreaming && !isViewingHistory}
             activeAction={displayAction}
+            fontSize={fontSize}
           />
         )}
       </div>

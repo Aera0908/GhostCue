@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Mic, Volume2, Sliders, Zap, RefreshCw, Play, CheckCircle2, AlertTriangle, HelpCircle, Timer } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { AudioDeviceInfo } from "../../types/audio";
@@ -7,13 +7,28 @@ import { TauriApi } from "../../services/tauriApi";
 interface AudioSettingsProps {
   config: AppConfig;
   onChange: (key: keyof AppConfig, value: any) => void;
+  onLiveUpdate?: (key: keyof AppConfig, value: any) => void;
   inLiveHud?: boolean;
 }
 
-export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, inLiveHud = false }) => {
+export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, onLiveUpdate, inLiveHud = false }) => {
   const [inputDevices, setInputDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<AudioDeviceInfo[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+
+  const configRef = useRef(config);
+  configRef.current = config;
+
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRestartingRef = useRef(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debounceSaveConfig = (updated: AppConfig) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      TauriApi.saveConfig(updated).catch(console.warn);
+    }, 350);
+  };
 
   // Live Audio Testing Levels
   const [liveMicLevel, setLiveMicLevel] = useState<number>(0);
@@ -69,6 +84,8 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
       if (unlistenMic) unlistenMic();
       if (unlistenLoopback) unlistenLoopback();
       clearInterval(pollInterval);
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       if (!inLiveHud) {
         TauriApi.stopAudioCapture().catch(console.warn);
       }
@@ -113,17 +130,61 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
     }
   };
 
-  const handleDeviceChange = async (key: keyof AppConfig, value: any) => {
+  // Hardware device switch with safe debounce and clean stream restart
+  const handleDeviceChange = (key: keyof AppConfig, value: any) => {
     onChange(key, value);
-    const updatedConfig = { ...config, [key]: value };
-    await TauriApi.saveConfig(updatedConfig);
+    onLiveUpdate?.(key, value);
+    const updatedConfig = { ...configRef.current, [key]: value };
 
-    try {
-      await TauriApi.stopAudioCapture();
-      await TauriApi.startAudioCapture();
-    } catch (e) {
-      console.warn("Device hot-swap error:", e);
-    }
+    if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+    restartTimeoutRef.current = setTimeout(async () => {
+      if (isRestartingRef.current) return;
+      isRestartingRef.current = true;
+      try {
+        await TauriApi.saveConfig(updatedConfig);
+        await TauriApi.stopAudioCapture();
+        await new Promise((r) => setTimeout(r, 80));
+        await TauriApi.startAudioCapture();
+      } catch (e) {
+        console.warn("Device hot-swap error:", e);
+      } finally {
+        isRestartingRef.current = false;
+      }
+    }, 180);
+  };
+
+  // Dynamic sensitivity change: updates live backend VAD atomics immediately without restarting audio
+  const handleSensitivityChange = (val: number) => {
+    onChange("vad_sensitivity", val);
+    onLiveUpdate?.("vad_sensitivity", val);
+    const updated = { ...configRef.current, vad_sensitivity: val };
+    TauriApi.updateAudioVadParams(val, configRef.current.vad_silence_cutoff_ms || 1600).catch(console.warn);
+    debounceSaveConfig(updated);
+  };
+
+  // Dynamic silence cutoff change: updates live backend VAD atomics immediately without restarting audio
+  const handleCutoffChange = (val: number) => {
+    onChange("vad_silence_cutoff_ms", val);
+    onLiveUpdate?.("vad_silence_cutoff_ms", val);
+    const updated = { ...configRef.current, vad_silence_cutoff_ms: val };
+    TauriApi.updateAudioVadParams(configRef.current.vad_sensitivity || 0.5, val).catch(console.warn);
+    debounceSaveConfig(updated);
+  };
+
+  // Auto-answer toggle: live update with debounced save
+  const handleAutoTriggerToggle = (enabled: boolean) => {
+    onChange("auto_trigger_enabled", enabled);
+    onLiveUpdate?.("auto_trigger_enabled", enabled);
+    const updated = { ...configRef.current, auto_trigger_enabled: enabled };
+    debounceSaveConfig(updated);
+  };
+
+  // Auto-answer conversational pause delay: updates frontend timer ref immediately with debounced save
+  const handleAutoTriggerDelayChange = (delayMs: number) => {
+    onChange("auto_trigger_delay_ms", delayMs);
+    onLiveUpdate?.("auto_trigger_delay_ms", delayMs);
+    const updated = { ...configRef.current, auto_trigger_delay_ms: delayMs };
+    debounceSaveConfig(updated);
   };
 
   const micPct = Math.min(100, Math.max(liveMicActive ? 6 : 0, Math.round(liveMicLevel * 100)));
@@ -180,14 +241,26 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
             </div>
           </div>
 
-          <div className="w-full h-2.5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
+          <div className="relative w-full h-3 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
+            {/* Visual Pickup Threshold Line */}
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10 shadow-[0_0_6px_#fbbf24]"
+              style={{ left: `${Math.round(Math.max(8, Math.min(92, (1.0 - (config.vad_sensitivity || 0.5)) * 80 + 10)))}%` }}
+              title={`Voice Pickup Sensitivity Threshold (${Math.round((config.vad_sensitivity || 0.5) * 100)}%)`}
+            />
             <div
               className={`h-full transition-all duration-75 ease-out rounded-full ${
-                liveMicActive ? "bg-emerald-400" : "bg-emerald-800/60"
+                liveMicActive ? "bg-emerald-400 shadow-[0_0_10px_#10b981]" : "bg-emerald-800/60"
               }`}
               style={{ width: `${Math.max(2, micPct)}%` }}
             />
           </div>
+          <p className="text-[10px] text-slate-400 flex items-center justify-between">
+            <span>Amber line = Current pickup threshold marker</span>
+            <span className={liveMicActive ? "text-emerald-400 font-bold" : "text-slate-400"}>
+              {liveMicActive ? "Voice above threshold" : "Below threshold (Silence/Noise)"}
+            </span>
+          </p>
         </div>
 
         {/* Live Loopback Bar */}
@@ -346,34 +419,58 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
 
         <div className="space-y-1.5">
           <div className="flex justify-between text-slate-300">
-            <span>Voice Pickup Sensitivity</span>
-            <span className="text-slate-100 font-bold">{Math.round(config.vad_sensitivity * 100)}%</span>
+            <div>
+              <span>Voice Pickup Sensitivity</span>
+              <p className="text-[10px] text-slate-400">
+                {config.vad_sensitivity < 0.3
+                  ? "Strict: Rejects keyboard clicks & ambient noise (requires firm speaking voice)"
+                  : config.vad_sensitivity > 0.7
+                  ? "Sensitive: Detects soft whispers & faint speech easily"
+                  : "Balanced: Optimal for standard room & speaking cadence"}
+              </p>
+            </div>
+            <span className="text-slate-100 font-bold font-mono">{Math.round((config.vad_sensitivity || 0.5) * 100)}%</span>
           </div>
           <input
             type="range"
-            min="0.1"
-            max="0.9"
+            min="0.05"
+            max="0.95"
             step="0.05"
-            value={config.vad_sensitivity}
-            onChange={(e) => handleDeviceChange("vad_sensitivity", parseFloat(e.target.value))}
+            value={config.vad_sensitivity || 0.5}
+            onChange={(e) => handleSensitivityChange(parseFloat(e.target.value))}
             className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
           />
+          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>Tight (10% - Reject Noise)</span>
+            <span>Balanced (50%)</span>
+            <span>Sensitive (90% - Whisper)</span>
+          </div>
         </div>
 
         <div className="space-y-1.5">
           <div className="flex justify-between text-slate-300">
-            <span>Sentence Pause Silence Cutoff</span>
-            <span className="text-slate-100 font-bold">{config.vad_silence_cutoff_ms} ms</span>
+            <div>
+              <span>Sentence Pause Silence Cutoff</span>
+              <p className="text-[10px] text-slate-400">
+                How long a speaker must pause before their speech is finalized into a turn
+              </p>
+            </div>
+            <span className="text-slate-100 font-bold font-mono">{config.vad_silence_cutoff_ms || 1600} ms</span>
           </div>
           <input
             type="range"
-            min="400"
-            max="3000"
-            step="100"
-            value={config.vad_silence_cutoff_ms}
-            onChange={(e) => handleDeviceChange("vad_silence_cutoff_ms", parseInt(e.target.value))}
+            min="200"
+            max="3500"
+            step="50"
+            value={config.vad_silence_cutoff_ms || 1600}
+            onChange={(e) => handleCutoffChange(parseInt(e.target.value, 10))}
             className="w-full h-2 bg-slate-950 accent-sky-400 rounded cursor-pointer"
           />
+          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>Rapid (200ms - 400ms)</span>
+            <span>Natural (800ms - 1.6s)</span>
+            <span>Relaxed (2.5s+)</span>
+          </div>
         </div>
 
         <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-lg">
@@ -389,7 +486,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
           <input
             type="checkbox"
             checked={config.auto_trigger_enabled}
-            onChange={(e) => handleDeviceChange("auto_trigger_enabled", e.target.checked)}
+            onChange={(e) => handleAutoTriggerToggle(e.target.checked)}
             className="w-4 h-4 accent-sky-400 cursor-pointer"
           />
         </div>
@@ -410,17 +507,17 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({ config, onChange, 
           </p>
           <input
             type="range"
-            min="400"
+            min="100"
             max="4000"
-            step="100"
+            step="50"
             value={config.auto_trigger_delay_ms || 1500}
-            onChange={(e) => handleDeviceChange("auto_trigger_delay_ms", parseInt(e.target.value, 10))}
+            onChange={(e) => handleAutoTriggerDelayChange(parseInt(e.target.value, 10))}
             className="w-full h-2 bg-slate-900 accent-amber-400 rounded cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-            <span>Fast (0.4s)</span>
-            <span>Balanced (1.5s)</span>
-            <span>Patient (4.0s)</span>
+            <span>Fast (0.1s - 0.5s)</span>
+            <span>Balanced (1.2s - 1.8s)</span>
+            <span>Patient (3.0s - 4.0s)</span>
           </div>
         </div>
       </div>

@@ -118,9 +118,38 @@ CRITICAL CONTINUITY & CONSISTENCY RULES:
 
     /// Build system prompt dynamically based on action mode and candidate context
     pub fn build_system_prompt(config: &AppConfig, action: ActionType) -> String {
-        if !config.system_prompt_override.trim().is_empty() {
-            return config.system_prompt_override.clone();
-        }
+        let override_block = if !config.system_prompt_override.trim().is_empty() {
+            format!(
+r#"
+================================================================================
+🚨 HIGHEST-PRIORITY USER DIRECTIVE & OVERRIDE RULE (MANDATORY) 🚨
+The user has established the following custom directive which takes ABSOLUTE TOP PRIORITY over standard styling or length defaults:
+"{}"
+
+CRITICAL INSTRUCTION:
+- You MUST strictly obey the above directive for all generated responses.
+- In addition, you MUST continue to ground and anchor your response in the candidate's target role, target company, resume, background, and project repertoire provided below. Do NOT drop or ignore the candidate context!
+================================================================================
+"#,
+                config.system_prompt_override.trim()
+            )
+        } else {
+            String::new()
+        };
+
+        let override_reminder = if !config.system_prompt_override.trim().is_empty() {
+            format!(
+r#"
+================================================================================
+🚨 MANDATORY USER DIRECTIVE REMINDER 🚨
+Remember to strictly obey the user directive: "{}"
+================================================================================
+"#,
+                config.system_prompt_override.trim()
+            )
+        } else {
+            String::new()
+        };
 
         let lang_instruction = get_language_instruction(&config.response_language);
         let formatting_and_lang = format!("{}\n{}", lang_instruction, LATEX_INSTRUCTION);
@@ -130,14 +159,15 @@ CRITICAL CONTINUITY & CONSISTENCY RULES:
             return format!(
 r#"You are an authoritative, helpful, and highly knowledgeable technical AI assistant.
 Your goal is to provide clear, direct, well-structured, and factual answers to technical and general questions.
-
+{}
 === IMPORTANT RULES FOR GENERIC Q&A ===
 1. DO NOT speak as a job interview candidate. DO NOT roleplay or use first-person phrases like "In my past experience at...", "My resume demonstrates...", or "As a candidate...".
 2. Answer the question normally, objectively, factually, and educationally.
 3. Structure your response with clean headings, concise definitions, bullet points, and code/architecture examples where relevant.
 {}
-5. Be crisp, punchy, and jump straight into the answer without filler phrases ("Certainly!", "Great question!")."#,
-                formatting_and_lang
+5. Be crisp, punchy, and jump straight into the answer without filler phrases ("Certainly!", "Great question!").
+{}"#,
+                override_block, formatting_and_lang, override_reminder
             );
         }
 
@@ -146,7 +176,7 @@ Your goal is to provide clear, direct, well-structured, and factual answers to t
             return format!(
 r#"You are an elite competitive programmer, FAANG technical interviewer, and algorithm specialist.
 Your goal is to provide 100% correct, optimal, bug-free code solutions that pass all hidden test cases, time limits, and edge conditions.
-
+{}
 === RIGOROUS CODING STANDARDS ===
 1. CONSTRAINTS & TIME LIMITS:
    - Carefully analyze problem constraints (e.g. N <= 10^5 requires O(N) or O(N log N); N <= 20 allows O(2^N)).
@@ -161,8 +191,9 @@ Your goal is to provide 100% correct, optimal, bug-free code solutions that pass
    - Clearly explain the core intuition, state transitions, and complexity in LaTeX (Time $O(...)$ & Space $O(...)$).
 {}
 5. CANDIDATE TALKING POINTS:
-   - 2-3 concise, professional points for the candidate to verbalize to the interviewer."#,
-                formatting_and_lang
+   - 2-3 concise, professional points for the candidate to verbalize to the interviewer.
+{}"#,
+                override_block, formatting_and_lang, override_reminder
             );
         }
 
@@ -171,7 +202,7 @@ Your goal is to provide 100% correct, optimal, bug-free code solutions that pass
             return format!(
 r#"You are an elite technical screen vision and OCR copilot for software engineers, system architects, and technical interview candidates.
 Your goal is to inspect the attached screenshot, smartly detect whether the visible content requires programming/code, architecture planning, or conceptual explanation, and deliver an immediate, authoritative, interview-winning response.
-
+{}
 === SMART INTENT DETECTION (DOES IT ASK FOR CODE OR NOT?) ===
 Carefully examine the screen content to classify the primary goal:
 
@@ -202,8 +233,9 @@ Carefully examine the screen content to classify the primary goal:
 4. USER QUERY OVERRIDE:
    - If the user provides a custom prompt alongside the capture (e.g. "write code for this", "explain the architecture", "which choice is correct?"), strictly prioritize answering that exact request.
 {}
+{}
 "#,
-                formatting_and_lang
+                override_block, formatting_and_lang, override_reminder
             );
         }
 
@@ -212,9 +244,10 @@ Carefully examine the screen content to classify the primary goal:
             return format!(
 r#"You are an executive technical summary assistant.
 Your goal is to provide a scannable, punchy bullet-point executive summary of key discussion points, core concepts, or interview notes.
-
+{}
+{}
 {}"#,
-                formatting_and_lang
+                override_block, formatting_and_lang, override_reminder
             );
         }
 
@@ -270,7 +303,7 @@ CRITICAL GUIDELINE ON PROJECT USAGE:
         format!(
 r#"You are GhostCue, a real-time stealth AI interview copilot assisting a candidate during a live interview.
 Your goal is to supply direct, authentic, and highly persuasive answers that anchor smartly in the candidate's actual resume, background, and the specific company & role context.
-
+{override_block}
 === CANDIDATE PROFILE & INTERVIEW TARGET ===
 - Target Role: {role}
 - Target Company: {company}
@@ -307,14 +340,17 @@ Your goal is to supply direct, authentic, and highly persuasive answers that anc
    - When previous questions and answers from this interview session are provided in the context, maintain strict consistency with them.
    - Do not contradict previously stated architectural decisions, database choices, tech stack components, or algorithms. Build smoothly upon earlier explanations for follow-up questions.
 
-{formatting_and_lang}"#,
+{formatting_and_lang}
+{override_reminder}"#,
             role = role,
             company = company,
             interview_title = interview_title,
             job_desc = job_desc,
             resume = resume,
             project_context_block = project_context_block,
-            formatting_and_lang = formatting_and_lang
+            override_block = override_block,
+            formatting_and_lang = formatting_and_lang,
+            override_reminder = override_reminder
         )
     }
 

@@ -89,15 +89,15 @@ impl LlmOrchestrator {
         let result = match config.llm_provider.as_str() {
             "gemini" => {
                 let client = GeminiClient::new(config.gemini_api_key, effective_model.clone());
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "ollama" => {
                 let client = OllamaClient::new(config.ollama_endpoint, effective_model.clone());
-                client.stream_generate(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_generate(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "openai" => {
                 let client = OpenAiClient::new(config.openai_base_url, config.openai_api_key, effective_model.clone());
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "anthropic" => {
                 let client = OpenAiClient::new(
@@ -105,7 +105,7 @@ impl LlmOrchestrator {
                     config.anthropic_api_key,
                     effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "groq" => {
                 let client = OpenAiClient::new(
@@ -113,7 +113,7 @@ impl LlmOrchestrator {
                     config.openai_api_key,
                     effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "deepseek" => {
                 let api_key = if !config.deepseek_api_key.is_empty() {
@@ -128,10 +128,12 @@ impl LlmOrchestrator {
                     api_key,
                     effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             "openrouter" => {
-                let api_key = if !config.custom_api_key.is_empty() {
+                let api_key = if !config.openrouter_api_key.is_empty() {
+                    config.openrouter_api_key
+                } else if !config.custom_api_key.is_empty() {
                     config.custom_api_key
                 } else {
                     config.openai_api_key
@@ -141,16 +143,20 @@ impl LlmOrchestrator {
                     api_key,
                     effective_model.clone(),
                 );
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
             _ => {
                 let client = OpenAiClient::new(config.custom_endpoint, config.custom_api_key, effective_model.clone());
-                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag).await
+                client.stream_chat(app_handle.clone(), system_prompt, user_prompt, image_data, abort_flag.clone()).await
             }
         };
 
         match result {
             Ok(full_text) => {
+                if abort_flag.load(Ordering::SeqCst) {
+                    info!("LLM generation was cancelled; suppressing completion event.");
+                    return Ok(String::new());
+                }
                 let payload_complete = serde_json::json!({
                     "text": full_text.clone(),
                     "action": action_name,
@@ -162,6 +168,10 @@ impl LlmOrchestrator {
                 Ok(full_text)
             }
             Err(err) => {
+                if abort_flag.load(Ordering::SeqCst) || err.contains("cancelled") || err.contains("Cancelled") {
+                    info!("LLM generation was cancelled ({}); suppressing error emission.", err);
+                    return Ok(String::new());
+                }
                 let payload_err = serde_json::json!({
                     "error": err.clone(),
                     "action": action_name,

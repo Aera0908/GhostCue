@@ -20,6 +20,7 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
   loopbackLevel,
   micActive,
   loopbackActive,
+  sensitivity = 0.5,
   micMuted = false,
   loopbackMuted = false,
   onToggleMicMute,
@@ -126,14 +127,20 @@ export const AudioMeters: React.FC<AudioMetersProps> = ({
           aria-valuenow={micPct}
           aria-valuemin={0}
           aria-valuemax={100}
-          className="flex-1 h-2 bg-slate-950 border border-slate-700/80 rounded-full overflow-hidden"
+          className="relative flex-1 h-2 bg-slate-950 border border-slate-700/80 rounded-full overflow-hidden"
         >
+          {/* Pickup Sensitivity Threshold Marker */}
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-amber-400/80 z-10 shadow-[0_0_3px_#fbbf24]"
+            style={{ left: `${Math.round(Math.max(8, Math.min(92, (1.0 - (sensitivity || 0.5)) * 80 + 10)))}%` }}
+            title={`Voice Pickup Sensitivity Threshold: ${Math.round((sensitivity || 0.5) * 100)}%`}
+          />
           <div
             className={`h-full transition-all duration-75 ease-out rounded-full ${
               micMuted
                 ? "bg-transparent"
                 : micActive
-                ? "bg-emerald-400"
+                ? "bg-emerald-400 shadow-[0_0_6px_#10b981]"
                 : "bg-emerald-800/60"
             }`}
             style={{ width: `${micPct}%` }}

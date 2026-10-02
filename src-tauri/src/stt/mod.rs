@@ -19,14 +19,24 @@ pub async fn clear_transcript_history(state: State<'_, AppState>) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn get_available_whisper_models() -> Result<serde_json::Value, String> {
+pub async fn get_available_whisper_models(app_handle: AppHandle) -> Result<serde_json::Value, String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    let models_dir = app_dir.join("models");
+
     let models: Vec<serde_json::Value> = WHISPER_MODELS
         .iter()
-        .map(|(name, url, size)| {
+        .map(|m| {
+            let model_file = models_dir.join(format!("ggml-{}.bin", m.name));
+            let is_downloaded = model_file.exists() && model_file.metadata().map(|meta| meta.len()).unwrap_or(0) >= m.min_bytes;
             serde_json::json!({
-                "name": name,
-                "url": url,
-                "size": size,
+                "name": m.name,
+                "url": m.url,
+                "size": m.display_size,
+                "downloaded": is_downloaded,
+                "path": if is_downloaded { model_file.to_string_lossy().to_string() } else { "".to_string() },
             })
         })
         .collect();

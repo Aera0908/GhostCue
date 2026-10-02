@@ -11,11 +11,17 @@ use super::vad::{VadDetector, VadSegment, VAD_FRAME_SIZE};
 use crate::config::AppConfig;
 use std::sync::atomic::AtomicU32;
 
+use std::sync::atomic::AtomicU64;
+
 /// Shared atomic storage for current audio levels (for polling fallback)
 pub static CURRENT_MIC_LEVEL: AtomicU32 = AtomicU32::new(0);
 pub static CURRENT_MIC_ACTIVE: AtomicBool = AtomicBool::new(false);
 pub static CURRENT_LOOPBACK_LEVEL: AtomicU32 = AtomicU32::new(0);
 pub static CURRENT_LOOPBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Real-time live parameters for VAD detection without stream recreation
+pub static LIVE_VAD_SENSITIVITY: AtomicU32 = AtomicU32::new(0x3f000000); // 0.5f32.to_bits()
+pub static LIVE_VAD_SILENCE_CUTOFF_MS: AtomicU64 = AtomicU64::new(1600);
 
 pub struct AudioCaptureManager {
     is_running: Arc<AtomicBool>,
@@ -39,6 +45,12 @@ impl AudioCaptureManager {
         self.is_running.load(Ordering::SeqCst)
     }
 
+    pub fn update_params(&self, sensitivity: f32, silence_cutoff_ms: u64) {
+        LIVE_VAD_SENSITIVITY.store(sensitivity.to_bits(), Ordering::Relaxed);
+        LIVE_VAD_SILENCE_CUTOFF_MS.store(silence_cutoff_ms, Ordering::Relaxed);
+        info!("Updated live VAD params: sensitivity={:.2}, cutoff={}ms", sensitivity, silence_cutoff_ms);
+    }
+
     pub fn stop(&mut self) {
         info!("Stopping audio capture streams...");
         self.is_running.store(false, Ordering::SeqCst);
@@ -53,6 +65,10 @@ impl AudioCaptureManager {
         segment_sender: Sender<VadSegment>,
     ) -> Result<(), String> {
         self.stop();
+
+        // Sync initial live parameters
+        LIVE_VAD_SENSITIVITY.store(config.vad_sensitivity.to_bits(), Ordering::Relaxed);
+        LIVE_VAD_SILENCE_CUTOFF_MS.store(config.vad_silence_cutoff_ms, Ordering::Relaxed);
 
         info!("=== Starting dual-channel audio capture ===");
         info!("  mic_enabled={}, loopback_enabled={}", config.mic_enabled, config.loopback_enabled);
@@ -634,6 +650,11 @@ impl AudioCaptureManager {
         accumulator.extend_from_slice(&pcm16k);
 
         while accumulator.len() >= VAD_FRAME_SIZE {
+            // Read latest live sensitivity and cutoff dynamically
+            let current_sensitivity = f32::from_bits(LIVE_VAD_SENSITIVITY.load(Ordering::Relaxed));
+            let current_cutoff_ms = LIVE_VAD_SILENCE_CUTOFF_MS.load(Ordering::Relaxed);
+            vad.update_params(current_sensitivity, current_cutoff_ms);
+
             let frame: Vec<f32> = accumulator.drain(..VAD_FRAME_SIZE).collect();
             let (segment_opt, rms, is_active) = vad.process_frame(&frame);
 
@@ -649,19 +670,18 @@ impl AudioCaptureManager {
 
             let payload = serde_json::json!({
                 "level": display_level,
-                "active": is_active || display_level > 0.12,
+                "active": is_active,
                 "speaker": speaker
             });
 
             // Store in shared atomics for polling fallback
             let level_bits = display_level.to_bits();
-            let is_active_flag = is_active || display_level > 0.12;
             if event_name == "audio-mic-level" {
                 CURRENT_MIC_LEVEL.store(level_bits, Ordering::Relaxed);
-                CURRENT_MIC_ACTIVE.store(is_active_flag, Ordering::Relaxed);
+                CURRENT_MIC_ACTIVE.store(is_active, Ordering::Relaxed);
             } else {
                 CURRENT_LOOPBACK_LEVEL.store(level_bits, Ordering::Relaxed);
-                CURRENT_LOOPBACK_ACTIVE.store(is_active_flag, Ordering::Relaxed);
+                CURRENT_LOOPBACK_ACTIVE.store(is_active, Ordering::Relaxed);
             }
 
             // Emit events to all webviews

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, User, Sliders, Cpu, Settings as SettingsIcon, Save, RotateCcw } from "lucide-react";
 import { AppConfig } from "../../types/config";
 import { ContextSettings } from "./ContextSettings";
@@ -13,6 +13,7 @@ interface SettingsModalProps {
   onClose: () => void;
   config: AppConfig;
   onSave: (config: AppConfig) => Promise<void>;
+  onLiveUpdate?: (key: keyof AppConfig, value: any) => void;
   inLiveHud?: boolean;
 }
 
@@ -23,6 +24,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   config: initialConfig,
   onSave,
+  onLiveUpdate,
   inLiveHud = false,
 }) => {
   const { t } = useTranslation();
@@ -30,10 +32,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [formData, setFormData] = useState<AppConfig>(initialConfig);
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(initialConfig);
+    }
+  }, [isOpen, initialConfig]);
+
   if (!isOpen) return null;
 
   const handleChange = (key: keyof AppConfig, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
+    onLiveUpdate?.(key, value);
   };
 
   const handleSave = async () => {
@@ -141,7 +150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Tab Content */}
         <div className="flex-1 p-5 overflow-y-auto max-h-[62vh] scrollbar-thin bg-slate-950">
           {activeTab === "context" && <ContextSettings config={formData} onChange={handleChange} />}
-          {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} inLiveHud={inLiveHud} />}
+          {activeTab === "audio" && <AudioSettings config={formData} onChange={handleChange} onLiveUpdate={onLiveUpdate} inLiveHud={inLiveHud} />}
           {activeTab === "models" && <ModelSettings config={formData} onChange={handleChange} />}
           {activeTab === "general" && <GeneralSettings config={formData} onChange={handleChange} />}
         </div>

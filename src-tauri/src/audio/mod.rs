@@ -66,3 +66,15 @@ pub fn get_audio_levels() -> serde_json::Value {
     })
 }
 
+#[tauri::command]
+pub fn update_audio_vad_params(
+    vad_sensitivity: f32,
+    vad_silence_cutoff_ms: u64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let capture_mgr = state.inner().audio_capture.lock();
+    capture_mgr.update_params(vad_sensitivity, vad_silence_cutoff_ms);
+    Ok(())
+}
+
+

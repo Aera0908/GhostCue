@@ -21,6 +21,7 @@ dist-ssr/
 models/*.bin
 src-tauri/models/*.bin
 *.bin
+*.exe
 
 # Logs
 npm-debug.log*

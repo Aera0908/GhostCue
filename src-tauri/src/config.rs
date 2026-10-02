@@ -36,6 +36,18 @@ fn default_deepseek_model() -> String {
     "deepseek-chat".to_string()
 }
 
+fn default_font_size() -> u32 {
+    14
+}
+
+fn default_openrouter_model() -> String {
+    "deepseek/deepseek-chat".to_string()
+}
+
+fn default_groq_whisper_model() -> String {
+    "whisper-large-v3-turbo".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     // Window & Stealth
@@ -45,6 +57,8 @@ pub struct AppConfig {
     pub opacity: f64,
     pub click_through: bool,
     pub always_on_top: bool,
+    #[serde(default = "default_font_size")]
+    pub font_size: u32,
 
     // Audio Devices
     pub audio_input_device: Option<String>,
@@ -68,10 +82,14 @@ pub struct AppConfig {
     pub response_language: String, // "auto", "en", "tl-PH", "zh-CN", "zh-TW", "es", "ja", "de", "fr", "pt-BR", "ko", "ru", "hi", "ar"
 
     // STT Engine
-    pub stt_provider: String, // "cloud_whisper" | "local_whisper" | "deepgram" | "mock"
+    pub stt_provider: String, // "cloud_whisper" | "local_whisper" | "deepgram" | "groq" | "openrouter" | "mock"
     pub whisper_model_path: String,
     pub whisper_model_size: String, // "tiny.en", "base.en", "small.en"
     pub deepgram_api_key: String,
+    #[serde(default)]
+    pub groq_api_key: String,
+    #[serde(default = "default_groq_whisper_model")]
+    pub groq_whisper_model: String,
 
     // LLM Provider
     pub llm_provider: String, // "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "custom"
@@ -91,6 +109,10 @@ pub struct AppConfig {
     pub custom_endpoint: String,
     pub custom_api_key: String,
     pub custom_model: String,
+    #[serde(default)]
+    pub openrouter_api_key: String,
+    #[serde(default = "default_openrouter_model")]
+    pub openrouter_model: String,
 
     // Interview Context & Prompts
     pub target_role: String,
@@ -125,6 +147,7 @@ impl Default for AppConfig {
             opacity: 0.92,
             click_through: false,
             always_on_top: true,
+            font_size: 14,
 
             audio_input_device: None,
             audio_output_device: None,
@@ -140,10 +163,12 @@ impl Default for AppConfig {
             stt_languages: vec!["en".to_string(), "tl".to_string()],
             response_language: "auto".to_string(),
 
-            stt_provider: "cloud_whisper".to_string(),
+            stt_provider: "local_whisper".to_string(),
             whisper_model_path: "".to_string(),
             whisper_model_size: "base.en".to_string(),
             deepgram_api_key: "".to_string(),
+            groq_api_key: "".to_string(),
+            groq_whisper_model: "whisper-large-v3-turbo".to_string(),
 
             llm_provider: "gemini".to_string(),
             gemini_api_key: "".to_string(),
@@ -160,6 +185,8 @@ impl Default for AppConfig {
             custom_endpoint: "".to_string(),
             custom_api_key: "".to_string(),
             custom_model: "".to_string(),
+            openrouter_api_key: "".to_string(),
+            openrouter_model: "deepseek/deepseek-chat".to_string(),
 
             target_role: "Senior Software Engineer".to_string(),
             company_name: "".to_string(),
@@ -311,6 +338,53 @@ impl AppConfig {
             }
         }
 
+        if config.openrouter_api_key.is_empty() {
+            if let Ok(val) = env::var("OPENROUTER_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.openrouter_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.openrouter_model.is_empty() {
+            if let Ok(val) = env::var("OPENROUTER_MODEL") {
+                if !val.trim().is_empty() {
+                    config.openrouter_model = val.trim().to_string();
+                }
+            }
+        }
+
+        if config.custom_api_key.is_empty() {
+            if let Ok(val) = env::var("CUSTOM_API_KEY") {
+                if !val.trim().is_empty() {
+                    config.custom_api_key = val.trim().to_string();
+                }
+            }
+        }
+        if config.custom_endpoint.is_empty() {
+            if let Ok(val) = env::var("CUSTOM_ENDPOINT") {
+                if !val.trim().is_empty() {
+                    config.custom_endpoint = val.trim().to_string();
+                }
+            }
+        }
+        if config.custom_model.is_empty() {
+            if let Ok(val) = env::var("CUSTOM_MODEL") {
+                if !val.trim().is_empty() {
+                    config.custom_model = val.trim().to_string();
+                }
+            }
+        }
+
+        // Bridge openrouter_api_key and custom_api_key
+        if config.openrouter_api_key.is_empty() && !config.custom_api_key.is_empty() {
+            config.openrouter_api_key = config.custom_api_key.clone();
+        } else if !config.openrouter_api_key.is_empty() && config.custom_api_key.is_empty() {
+            config.custom_api_key = config.openrouter_api_key.clone();
+            if config.custom_endpoint.is_empty() {
+                config.custom_endpoint = "https://openrouter.ai/api/v1".to_string();
+            }
+        }
+
         // Only choose initial LLM provider if config does not already have a valid provider selected
         if config.llm_provider.is_empty() {
             if let Ok(val) = env::var("LLM_PROVIDER") {
@@ -318,6 +392,10 @@ impl AppConfig {
                 if !trimmed.is_empty() {
                     config.llm_provider = trimmed;
                 }
+            } else if !config.openrouter_api_key.is_empty() {
+                config.llm_provider = "openrouter".to_string();
+            } else if !config.custom_api_key.is_empty() {
+                config.llm_provider = "custom".to_string();
             } else if !config.gemini_api_key.is_empty() {
                 config.llm_provider = "gemini".to_string();
             } else if !config.openai_api_key.is_empty() {
@@ -325,7 +403,7 @@ impl AppConfig {
             } else if !config.anthropic_api_key.is_empty() {
                 config.llm_provider = "anthropic".to_string();
             } else {
-                config.llm_provider = "gemini".to_string();
+                config.llm_provider = "openrouter".to_string();
             }
         }
 
@@ -427,7 +505,7 @@ impl AppConfig {
                 "anthropic" => if self.anthropic_model.is_empty() { "claude-3-5-sonnet-20241022".to_string() } else { self.anthropic_model.clone() },
                 "groq" => if self.openai_model.is_empty() { "llama-3.3-70b-versatile".to_string() } else { self.openai_model.clone() },
                 "deepseek" => if self.deepseek_model.is_empty() { "deepseek-chat".to_string() } else { self.deepseek_model.clone() },
-                "openrouter" => if self.custom_model.is_empty() { "openrouter/auto".to_string() } else { self.custom_model.clone() },
+                "openrouter" => if !self.openrouter_model.is_empty() { self.openrouter_model.clone() } else if !self.custom_model.is_empty() { self.custom_model.clone() } else { "deepseek/deepseek-chat".to_string() },
                 _ => self.custom_model.clone(),
             };
         }
@@ -493,10 +571,22 @@ impl AppConfig {
                 }
             }
             "openrouter" => {
-                if is_complex_task {
-                    "deepseek/deepseek-r1".to_string()
+                let chosen = if !self.openrouter_model.is_empty() {
+                    &self.openrouter_model
+                } else if !self.custom_model.is_empty() {
+                    &self.custom_model
                 } else {
-                    "deepseek/deepseek-chat".to_string()
+                    "deepseek/deepseek-chat"
+                };
+
+                if is_complex_task {
+                    if chosen == "deepseek/deepseek-chat" || chosen == "deepseek-chat" {
+                        "deepseek/deepseek-r1".to_string()
+                    } else {
+                        chosen.to_string()
+                    }
+                } else {
+                    chosen.to_string()
                 }
             }
             "ollama" => {
@@ -646,5 +736,9 @@ pub async fn save_app_config(
     state: State<'_, AppState>,
 ) -> Result<AppConfig, String> {
     state.inner().config_manager.update_config(new_config.clone())?;
+    {
+        let capture_mgr = state.inner().audio_capture.lock();
+        capture_mgr.update_params(new_config.vad_sensitivity, new_config.vad_silence_cutoff_ms);
+    }
     Ok(new_config)
 }

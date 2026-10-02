@@ -128,6 +128,8 @@ export interface TranslationDictionary {
     antiCaptureTitle: string;
     antiCaptureDesc: string;
     opacityTitle: string;
+    fontSizeTitle?: string;
+    fontSizeDesc?: string;
     hotkeysTitle: string;
 
     // Audio

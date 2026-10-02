@@ -86,11 +86,17 @@ pub async fn set_click_through(window: WebviewWindow, enabled: bool) -> Result<b
 /// Tauri Command: Toggle HUD visibility (Panic Key)
 #[tauri::command]
 pub async fn toggle_hud_visibility(window: WebviewWindow) -> Result<bool, String> {
+    let is_minimized = window.is_minimized().unwrap_or(false);
     let is_visible = window
         .is_visible()
         .map_err(|e| format!("Failed to check visibility: {}", e))?;
 
-    if is_visible {
+    if is_minimized {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        Ok(true)
+    } else if is_visible {
         window.hide().map_err(|e| format!("Failed to hide window: {}", e))?;
         Ok(false)
     } else {
@@ -113,6 +119,23 @@ pub async fn set_hud_opacity(window: WebviewWindow, _opacity: f64) -> Result<(),
 #[tauri::command]
 pub async fn start_dragging(window: WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|e| format!("Failed to start dragging: {}", e))
+}
+
+/// Tauri Command: Minimize window
+#[tauri::command]
+pub async fn minimize_window(window: WebviewWindow) -> Result<(), String> {
+    info!("Minimizing window...");
+    window.minimize().map_err(|e| format!("Failed to minimize window: {}", e))
+}
+
+/// Tauri Command: Unminimize / restore window
+#[tauri::command]
+pub async fn unminimize_window(window: WebviewWindow) -> Result<(), String> {
+    info!("Unminimizing / restoring window...");
+    window.unminimize().map_err(|e| format!("Failed to unminimize window: {}", e))?;
+    window.show().map_err(|e| format!("Failed to show window: {}", e))?;
+    window.set_focus().map_err(|e| format!("Failed to focus window: {}", e))?;
+    Ok(())
 }
 
 /// Tauri Command: Close and exit application

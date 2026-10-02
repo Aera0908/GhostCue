@@ -11,6 +11,7 @@ interface IdeCodeStudioProps {
   content: string;
   isStreaming: boolean;
   activeAction: string;
+  fontSize?: number;
 }
 
 interface ParsedResponse {
@@ -119,6 +120,7 @@ const customMarkdownComponents = {
 export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
   content,
   isStreaming,
+  fontSize = 14,
 }) => {
   const { t } = useTranslation();
   const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
@@ -168,7 +170,10 @@ export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
   if (!parsed.hasCode) {
     const formattedContent = normalizeLatexMarkdown(content);
     return (
-      <div className="prose prose-invert max-w-none text-slate-100 font-sans leading-relaxed text-sm">
+      <div
+        className="prose prose-invert max-w-none text-slate-100 font-sans leading-relaxed"
+        style={{ fontSize: `${fontSize}px` }}
+      >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
@@ -277,7 +282,10 @@ export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
               <span>{t.codeStudio.tabExplanation}</span>
             </div>
 
-            <div className="prose prose-invert max-w-none text-slate-100 text-xs sm:text-sm leading-relaxed font-sans select-text flex-1">
+            <div
+              className="prose prose-invert max-w-none text-slate-100 leading-relaxed font-sans select-text flex-1"
+              style={{ fontSize: `${fontSize}px` }}
+            >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
@@ -361,16 +369,25 @@ export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
           </div>
 
           {/* Code Table */}
-          <div className="p-3.5 overflow-auto flex-1 min-h-0 bg-slate-950 font-mono text-xs leading-relaxed scrollbar-thin">
+          <div
+            className="p-3.5 overflow-auto flex-1 min-h-0 bg-slate-950 font-mono leading-relaxed scrollbar-thin"
+            style={{ fontSize: `${Math.max(10, fontSize - 1)}px` }}
+          >
             {activeCodeBlock ? (
               <table className="w-full border-collapse">
                 <tbody>
                   {lines.map((line, lineIdx) => (
                     <tr key={lineIdx} className="hover:bg-slate-900/60 transition-colors group">
-                      <td className="pr-4 text-right text-xs select-none text-slate-500 group-hover:text-slate-400 font-mono w-7 align-top">
+                      <td
+                        className="pr-4 text-right select-none text-slate-500 group-hover:text-slate-400 font-mono w-7 align-top"
+                        style={{ fontSize: `${Math.max(10, fontSize - 2)}px` }}
+                      >
                         {lineIdx + 1}
                       </td>
-                      <td className="text-slate-100 font-mono whitespace-pre select-text">
+                      <td
+                        className="text-slate-100 font-mono whitespace-pre select-text"
+                        style={{ fontSize: `${Math.max(10, fontSize - 1)}px` }}
+                      >
                         {line || " "}
                       </td>
                     </tr>

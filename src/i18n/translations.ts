@@ -156,6 +156,8 @@ export const translations: Record<SupportedLocale, TranslationDictionary> = {
       antiCaptureTitle: "OS-Level Anti-Capture Stealth",
       antiCaptureDesc: "Exclude HUD window from screen shares, recordings, Teams, Zoom, and Google Meet",
       opacityTitle: "HUD Window Opacity",
+      fontSizeTitle: "Font Size & Readability",
+      fontSizeDesc: "Adjust text and code font size across AI answers, transcripts, and code viewer",
       hotkeysTitle: "Stealth Hotkey Shortcuts",
       audioTitle: "Audio Devices & Thresholds",
       inputDevice: "Microphone Input Device",

@@ -5,6 +5,7 @@ export interface AppConfig {
   opacity: number;
   click_through: boolean;
   always_on_top: boolean;
+  font_size?: number;
 
   // Audio Devices
   audio_input_device: string | null;
@@ -24,13 +25,17 @@ export interface AppConfig {
   response_language?: string; // "auto" | "en" | "tl-PH" | "zh-CN" | "zh-TW" | "es" | "ja" | "de" | "fr" | "pt-BR" | "ko" | "ru" | "hi" | "ar"
 
   // STT Engine
-  stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "mock" | string;
+  stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "groq" | "openrouter" | "mock" | string;
   whisper_model_path: string;
   whisper_model_size: string;
   deepgram_api_key: string;
+  groq_api_key?: string;
+  groq_whisper_model?: string;
 
   // LLM Provider
-  llm_provider: "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "deepseek" | "custom" | string;
+  llm_provider: "openrouter" | "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "deepseek" | "custom" | string;
+  openrouter_api_key?: string;
+  openrouter_model?: string;
   gemini_api_key: string;
   gemini_model: string;
   ollama_endpoint: string;

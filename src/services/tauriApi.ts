@@ -17,6 +17,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   opacity: 0.92,
   click_through: false,
   always_on_top: true,
+  font_size: 14,
   audio_input_device: null,
   audio_output_device: null,
   mic_enabled: true,
@@ -28,11 +29,15 @@ export const DEFAULT_CONFIG: AppConfig = {
   stt_language: "auto",
   stt_languages: ["en", "tl"],
   response_language: "auto",
-  stt_provider: "cloud_whisper",
+  stt_provider: "local_whisper",
   whisper_model_path: "",
   whisper_model_size: "base.en",
   deepgram_api_key: "",
-  llm_provider: "gemini",
+  groq_api_key: "",
+  groq_whisper_model: "whisper-large-v3-turbo",
+  llm_provider: "openrouter",
+  openrouter_api_key: "",
+  openrouter_model: "deepseek/deepseek-chat",
   gemini_api_key: "",
   gemini_model: "gemini-2.5-flash",
   ollama_endpoint: "http://localhost:11434",
@@ -93,6 +98,36 @@ export const TauriApi = {
       await invoke("start_dragging");
     } catch (e) {
       console.warn("startDragging error:", e);
+    }
+  },
+
+  async minimizeWindow(): Promise<void> {
+    if (!isTauri()) return;
+    try {
+      await invoke("minimize_window");
+    } catch (e) {
+      console.warn("invoke minimize_window failed, attempting fallback:", e);
+      try {
+        const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        await getCurrentWebviewWindow().minimize();
+      } catch (fallbackErr) {
+        console.error("Failed to minimize window:", fallbackErr);
+      }
+    }
+  },
+
+  async unminimizeWindow(): Promise<void> {
+    if (!isTauri()) return;
+    try {
+      await invoke("unminimize_window");
+    } catch (e) {
+      console.warn("invoke unminimize_window failed, attempting fallback:", e);
+      try {
+        const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        await getCurrentWebviewWindow().unminimize();
+      } catch (fallbackErr) {
+        console.error("Failed to unminimize window:", fallbackErr);
+      }
     }
   },
 
@@ -157,6 +192,18 @@ export const TauriApi = {
       return { mic_level: 0, mic_active: false, loopback_level: 0, loopback_active: false };
     }
     return await invoke<{ mic_level: number; mic_active: boolean; loopback_level: number; loopback_active: boolean }>("get_audio_levels");
+  },
+
+  async updateAudioVadParams(vadSensitivity: number, vadSilenceCutoffMs: number): Promise<void> {
+    if (!isTauri()) return;
+    try {
+      await invoke("update_audio_vad_params", {
+        vadSensitivity,
+        vadSilenceCutoffMs,
+      });
+    } catch (e) {
+      console.warn("updateAudioVadParams error:", e);
+    }
   },
 
   // Transcripts & STT

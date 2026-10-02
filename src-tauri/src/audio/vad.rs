@@ -48,17 +48,13 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn new(is_interviewer: bool, threshold: f32, _min_speech_ms: u64, silence_cutoff_ms: u64) -> Self {
-        // Use longer cutoff for interviewer to avoid splitting sentences
-        let effective_cutoff_ms = if is_interviewer {
-            silence_cutoff_ms.max(1600).clamp(500, 3500)
-        } else {
-            silence_cutoff_ms.max(1000).clamp(400, 3000)
-        };
+        // Respect the user's silence cutoff setting directly (allowing fast 200ms - 4000ms turnaround)
+        let effective_cutoff_ms = silence_cutoff_ms.clamp(100, 5000);
 
         Self {
             is_interviewer,
-            threshold: threshold.clamp(0.1, 0.9),
-            min_speech_duration: Duration::from_millis(100),
+            threshold: threshold.clamp(0.05, 0.95),
+            min_speech_duration: Duration::from_millis(80),
             silence_cutoff_duration: Duration::from_millis(effective_cutoff_ms),
             state: VadState::Silence,
             speech_start_instant: None,
@@ -71,6 +67,13 @@ impl VadDetector {
             filter_prev_x: 0.0,
             filter_prev_y: 0.0,
         }
+    }
+
+    /// Dynamically update sensitivity threshold and silence cutoff without recreating detector
+    pub fn update_params(&mut self, threshold: f32, silence_cutoff_ms: u64) {
+        self.threshold = threshold.clamp(0.05, 0.95);
+        let effective_cutoff_ms = silence_cutoff_ms.clamp(100, 5000);
+        self.silence_cutoff_duration = Duration::from_millis(effective_cutoff_ms);
     }
 
     /// 85Hz highpass filter to reduce low-frequency noise and DC offset
@@ -114,19 +117,26 @@ impl VadDetector {
         let rms = Self::calculate_rms(filtered_frame);
         let zcr = Self::calculate_zcr(filtered_frame);
 
-        // Adaptive noise floor tracking
-        if rms < self.noise_floor * 1.4 {
-            self.noise_floor = 0.96 * self.noise_floor + 0.04 * rms;
-        } else {
-            self.noise_floor = 0.998 * self.noise_floor + 0.002 * rms;
+        // Adaptive noise floor tracking: ONLY update during genuine silence, NEVER during speech!
+        if self.state == VadState::Silence {
+            if rms < self.noise_floor * 1.3 {
+                self.noise_floor = 0.95 * self.noise_floor + 0.05 * rms;
+            } else if rms < 0.005 {
+                self.noise_floor = 0.99 * self.noise_floor + 0.01 * rms;
+            }
         }
-        self.noise_floor = self.noise_floor.clamp(0.0005, 0.020);
+        self.noise_floor = self.noise_floor.clamp(0.0003, 0.01);
 
-        let snr_multiplier = 1.4 + (1.0 - self.threshold) * 1.2;
-        let min_energy_gate = 0.0025 + (1.0 - self.threshold) * 0.004;
+        // Sensitivity scaling:
+        // threshold: 0.05 (least sensitive, requires loud speech) to 0.95 (most sensitive, detects whispers)
+        let s = self.threshold.clamp(0.05, 0.95);
+        let tightness = 1.0 - s; // 0.05 (soft) to 0.95 (tight/strict)
+
+        let snr_multiplier = 1.25 + tightness * 2.6;
+        let min_energy_gate = 0.0016 + tightness.powi(2) * 0.030;
 
         let energy_ok = rms >= (self.noise_floor * snr_multiplier) && rms >= min_energy_gate;
-        let zcr_ok = zcr >= 0.01 && zcr <= 0.52;
+        let zcr_ok = zcr >= 0.002 && zcr <= 0.75;
 
         let is_speech = energy_ok && zcr_ok;
         (is_speech, rms)
@@ -192,8 +202,8 @@ impl VadDetector {
                         .map(|s| now.duration_since(s))
                         .unwrap_or_else(|| Duration::from_millis(600));
 
-                    // Keep any utterance with at least ~200ms of audio (catches "hello", "yes", "no")
-                    if self.accumulated_samples.len() >= (SAMPLE_RATE * 200 / 1000) {
+                    // Keep any utterance with at least ~150ms of audio (catches "why", "code", "yes", "no")
+                    if self.accumulated_samples.len() >= (SAMPLE_RATE * 150 / 1000) {
                         info!(
                             "VAD segment finalized (interviewer={}): {} samples ({:.2}s)",
                             self.is_interviewer,

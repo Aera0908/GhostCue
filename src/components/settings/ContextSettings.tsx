@@ -391,11 +391,14 @@ export const ContextSettings: React.FC<ContextSettingsProps> = ({ config, onChan
           <Code className="w-4 h-4 text-purple-400" />
           <span>{t.settings.systemPromptOverride}</span>
         </label>
+        <p className="text-xs text-slate-400">
+          Prioritized custom rule (e.g. &quot;the answer must not be more than 5 sentences&quot;). Your target role, job description, resume, and project context are always preserved.
+        </p>
         <textarea
           rows={3}
           value={config.system_prompt_override}
           onChange={(e) => onChange("system_prompt_override", e.target.value)}
-          placeholder="Leave blank to use GhostCue's standard concise coaching guidelines..."
+          placeholder="e.g. the answer must not be more than 5 sentences, prioritize system design and high-scale trade-offs..."
           className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400 leading-relaxed"
         />
       </div>

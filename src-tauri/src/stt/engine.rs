@@ -60,7 +60,19 @@ impl SttEngineManager {
     ) {
         info!("STT background worker loop started.");
 
-        while let Ok(segment) = receiver.recv() {
+        loop {
+            let segment = match receiver.try_recv() {
+                Ok(seg) => seg,
+                Err(crossbeam_channel::TryRecvError::Empty) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(35)).await;
+                    continue;
+                }
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    info!("STT channel disconnected, worker shutting down.");
+                    break;
+                }
+            };
+
             let config = get_config_fn();
             let speaker = if segment.speaker_is_interviewer {
                 "Interviewer"
@@ -78,8 +90,8 @@ impl SttEngineManager {
                 0.0
             };
 
-            // Skip frames below silence or minimum duration threshold
-            if duration_secs < 0.18 || rms_energy < 0.0018 {
+            // Skip frames below silence or minimum duration threshold (allows fast short questions)
+            if duration_secs < 0.14 || rms_energy < 0.0010 {
                 continue;
             }
 
@@ -92,9 +104,35 @@ impl SttEngineManager {
             );
 
             // Run transcription with configured STT provider
-            let transcript_result = if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
+            let transcript_result = if config.stt_provider == "groq" || (config.stt_provider == "cloud_whisper" && !config.groq_api_key.is_empty() && config.openai_api_key.is_empty()) {
+                super::whisper::transcribe_with_groq_whisper(
+                    &config.groq_api_key,
+                    &config.groq_whisper_model,
+                    &segment.samples,
+                    &config.stt_language,
+                ).await
+            } else if config.stt_provider == "openrouter" {
+                super::whisper::transcribe_with_openrouter(
+                    &config.openrouter_api_key,
+                    "google/gemini-2.5-flash",
+                    &segment.samples,
+                    &config.stt_language,
+                ).await
+            } else if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
                 let deepgram = DeepgramClient::new(config.deepgram_api_key.clone());
                 deepgram.transcribe_buffer(&segment.samples, &config.stt_language).await
+            } else if config.stt_provider == "local_whisper" || !config.whisper_model_path.is_empty() {
+                let samples = segment.samples.clone();
+                let m_path = config.whisper_model_path.clone();
+                let m_size = config.whisper_model_size.clone();
+                let lang = config.stt_language.clone();
+
+                tokio::task::spawn_blocking(move || {
+                    let preferred = if !m_path.is_empty() { Some(std::path::Path::new(&m_path)) } else { None };
+                    let valid_path = super::whisper::find_valid_model_path(preferred, &m_size);
+                    let whisper = LocalWhisperEngine::new(valid_path);
+                    whisper.transcribe(&samples, &lang)
+                }).await.unwrap_or_else(|e| Err(format!("Whisper task failed: {}", e)))
             } else if !config.openai_api_key.is_empty() {
                 super::whisper::transcribe_with_cloud_whisper(
                     &config.openai_api_key,
@@ -102,12 +140,35 @@ impl SttEngineManager {
                     &segment.samples,
                     &config.stt_language,
                 ).await
-            } else if !config.whisper_model_path.is_empty() {
-                let whisper = LocalWhisperEngine::new(Some(std::path::PathBuf::from(&config.whisper_model_path)));
-                whisper.transcribe(&segment.samples)
+            } else if !config.groq_api_key.is_empty() {
+                super::whisper::transcribe_with_groq_whisper(
+                    &config.groq_api_key,
+                    &config.groq_whisper_model,
+                    &segment.samples,
+                    &config.stt_language,
+                ).await
+            } else if !config.openrouter_api_key.is_empty() {
+                super::whisper::transcribe_with_openrouter(
+                    &config.openrouter_api_key,
+                    "google/gemini-2.5-flash",
+                    &segment.samples,
+                    &config.stt_language,
+                ).await
             } else {
-                warn!("No active STT provider available. Configure OpenAI API Key or Deepgram Key in Settings.");
-                Err("No STT key configured in Settings or .env".to_string())
+                // If any local model exists in APPDATA models, automatically use it!
+                let samples = segment.samples.clone();
+                let lang = config.stt_language.clone();
+                let auto_local = tokio::task::spawn_blocking(move || {
+                    let valid_path = super::whisper::find_valid_model_path(None, "base.en");
+                    if let Some(m) = valid_path {
+                        let whisper = LocalWhisperEngine::new(Some(m));
+                        whisper.transcribe(&samples, &lang)
+                    } else {
+                        Err("No active STT provider available. Configure Local Whisper GGML, Groq (free), OpenRouter, or Deepgram in Settings.".to_string())
+                    }
+                }).await.unwrap_or_else(|e| Err(format!("Local Whisper error: {}", e)));
+
+                auto_local
             };
 
             match transcript_result {
@@ -128,8 +189,15 @@ impl SttEngineManager {
                                 || prev_text.ends_with('!');
                             let continues_thought = prev_text.ends_with(',') || prev_text.ends_with("...") || prev_text.ends_with('-');
                             
-                            // Merge consecutive speech segments from the same speaker
-                            !ends_with_terminal || continues_thought || (segment.speaker_is_interviewer && duration_secs < 14.0)
+                            // NEVER merge if previous segment ended with terminal punctuation (especially '?') and does not continue thought
+                            if ends_with_terminal && !continues_thought {
+                                false
+                            } else if continues_thought {
+                                last.duration_secs + duration_secs < 25.0
+                            } else {
+                                // Incomplete sentence without terminal punctuation: merge only within reasonable phrase duration (< 18s)
+                                last.duration_secs + duration_secs < 18.0
+                            }
                         } else {
                             false
                         }

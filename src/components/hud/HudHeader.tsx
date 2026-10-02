@@ -6,11 +6,12 @@ import {
   LayoutGrid,
   Sparkles,
   X,
+  Minus,
   MessageSquare,
   Headphones,
   Columns2,
-  Minimize,
-  Maximize,
+  Minimize2,
+  Maximize2,
   Pause,
   Play,
   RotateCw,
@@ -399,11 +400,26 @@ export const HudHeader: React.FC<HudHeaderProps> = ({
         <button
           type="button"
           onClick={onToggleCompactPill}
-          aria-label={isCompactPill ? "Expand HUD" : "Compact Pill HUD"}
+          aria-label={isCompactPill ? "Expand Full HUD" : "Compact Floating Pill Mode"}
           className="p-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 shrink-0"
-          title={isCompactPill ? "Expand HUD" : "Compact Pill Mode"}
+          title={isCompactPill ? "Expand Full HUD" : "Compact Floating Pill Mode"}
         >
-          {isCompactPill ? <Maximize className="w-3.5 h-3.5" /> : <Minimize className="w-3.5 h-3.5" />}
+          {isCompactPill ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Minimize Window */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={async (e) => {
+            e.stopPropagation();
+            await TauriApi.minimizeWindow();
+          }}
+          aria-label="Minimize Window"
+          className="p-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 shrink-0 cursor-pointer"
+          title="Minimize Window"
+        >
+          <Minus className="w-3.5 h-3.5" />
         </button>
 
         {/* Close App */}
