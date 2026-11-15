@@ -11,16 +11,16 @@ body {
   padding: 0;
   background-color: transparent !important;
   user-select: none;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #f8fafc;
+  color: #ECEAE4;
 }
 
 /* WCAG 2.1 Focus Visibility Requirements */
 *:focus-visible {
-  outline: 2px solid #38bdf8 !important;
+  outline: 2px solid #F2A93B !important;
   outline-offset: 2px !important;
 }
 
@@ -31,23 +31,23 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: transparent;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #2A2D32;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #3D4148;
 }
 
 /* Global Selection with high contrast (WCAG AAA) */
 ::selection {
-  background-color: #0284c7;
-  color: #ffffff;
+  background-color: #F2A93B;
+  color: #1A1206;
 }
 
 /* Reduced Motion support for accessibility */

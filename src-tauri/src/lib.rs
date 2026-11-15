@@ -1,7 +1,9 @@
 pub mod audio;
 pub mod config;
+pub mod config_migrate;
 pub mod llm;
 pub mod project_scanner;
+pub mod secrets;
 pub mod state;
 pub mod stt;
 pub mod window;
@@ -138,6 +140,7 @@ pub fn run() {
             let config_mgr_clone = app_state.config_manager.clone();
             let worker_handle = app_handle.clone();
             let history_state_clone = app_state.stt_engine.clone();
+            let stt_secrets = app_state.secrets.clone();
 
             tauri::async_runtime::spawn(async move {
                 stt::engine::SttEngineManager::run_worker(
@@ -145,6 +148,7 @@ pub fn run() {
                     stt_receiver,
                     history_state_clone.conversation_history.clone(),
                     move || config_mgr_clone.get_config(),
+                    stt_secrets,
                     |_query| {
                         // Auto-triggering is centrally coordinated by the frontend
                         // which has real-time session, HUD state, and pause awareness.
@@ -171,6 +175,11 @@ pub fn run() {
             // Config
             config::get_app_config,
             config::save_app_config,
+            config::get_config_notice,
+            // Provider keys (Windows Credential Manager)
+            secrets::get_key_status,
+            secrets::set_provider_key,
+            secrets::clear_provider_key,
             // Audio
             audio::get_audio_devices,
             audio::start_audio_capture,
@@ -186,6 +195,8 @@ pub fn run() {
             // LLM
             llm::generate_ai_suggestion,
             llm::cancel_ai_suggestion,
+            llm::discovery::test_llm_provider,
+            llm::discovery::list_provider_models,
             // Project Scanner & File Export
             project_scanner::scan_project_directory,
             project_scanner::scan_multiple_project_directories,

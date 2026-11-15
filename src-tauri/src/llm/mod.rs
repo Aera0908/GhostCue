@@ -1,4 +1,11 @@
 pub mod prompt;
+pub mod error;
+pub mod http;
+pub mod provider;
+pub mod anthropic;
+pub mod discovery;
+#[cfg(test)]
+mod testutil;
 pub mod ollama;
 pub mod openai;
 pub mod gemini;
@@ -19,10 +26,12 @@ pub async fn generate_ai_suggestion(
 ) -> Result<String, String> {
     let config = state.inner().config_manager.get_config();
     let history = state.inner().stt_engine.get_history();
+    let secrets = state.inner().secrets.clone();
+    let sink = orchestrator::TauriSink(app_handle);
     state
         .inner()
         .llm_orchestrator
-        .generate_suggestion(app_handle, config, history, action, custom_query, past_answers, image_data)
+        .generate_suggestion(&sink, config, secrets.as_ref(), history, action, custom_query, past_answers, image_data)
         .await
 }
 

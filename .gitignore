@@ -22,6 +22,8 @@ models/*.bin
 src-tauri/models/*.bin
 *.bin
 *.exe
+*.msi
+*.dmg
 
 # Logs
 npm-debug.log*

@@ -1,191 +1,83 @@
+//! Google Gemini `streamGenerateContent`.
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use futures_util::StreamExt;
-use log::info;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-use reqwest::Client;
-use serde::Serialize;
-use serde_json::Value;
-use tauri::{AppHandle, Emitter};
 
-#[derive(Serialize)]
-struct InlineData {
-    #[serde(rename = "mimeType")]
-    mime_type: String,
-    data: String,
-}
+use serde_json::{json, Value};
 
-#[derive(Serialize)]
-#[serde(untagged)]
-enum GeminiPart {
-    Text { text: String },
-    Image {
-        #[serde(rename = "inlineData")]
-        inline_data: InlineData,
-    },
-}
+use super::error::{classify_http, LlmFailure};
+use super::http::{
+    build_client, cancelled, finish, header_safe, read_lines, send_with_retry, sse_data, ChatRequest, Flow,
+    HttpTimeouts, OnToken, RetryPolicy,
+};
+use super::provider::ResolvedProvider;
 
-#[derive(Serialize)]
-struct GeminiContent {
-    role: String,
-    parts: Vec<GeminiPart>,
-}
-
-#[derive(Serialize)]
-struct GeminiSystemInstruction {
-    parts: Vec<GeminiPart>,
-}
-
-#[derive(Serialize)]
-struct GeminiGenerationConfig {
-    temperature: f32,
-    #[serde(rename = "maxOutputTokens")]
-    max_output_tokens: u32,
-}
-
-#[derive(Serialize)]
-struct GeminiRequest {
-    #[serde(rename = "systemInstruction")]
-    system_instruction: GeminiSystemInstruction,
-    contents: Vec<GeminiContent>,
-    #[serde(rename = "generationConfig")]
-    generation_config: GeminiGenerationConfig,
-}
-
-pub struct GeminiClient {
-    api_key: String,
-    model: String,
-    client: Client,
-}
-
-impl GeminiClient {
-    pub fn new(api_key: String, model: String) -> Self {
-        let clean_model = if model.trim().is_empty() {
-            "gemini-2.5-flash".to_string()
-        } else {
-            model.trim().to_string()
-        };
-        Self {
-            api_key: api_key.trim().to_string(),
-            model: clean_model,
-            client: Client::new(),
-        }
+pub async fn stream_chat(
+    p: &ResolvedProvider,
+    req: ChatRequest<'_>,
+    timeouts: HttpTimeouts,
+    abort: Arc<AtomicBool>,
+    on_token: OnToken<'_>,
+) -> Result<String, LlmFailure> {
+    let name = p.def.display_name;
+    if abort.load(Ordering::SeqCst) {
+        return Err(cancelled(name));
     }
+    let key = header_safe(name, p.api_key.as_deref().unwrap_or(""))?;
 
-    pub async fn stream_chat(
-        &self,
-        app_handle: AppHandle,
-        system_prompt: String,
-        user_prompt: String,
-        image_data: Option<String>,
-        abort_flag: Arc<AtomicBool>,
-    ) -> Result<String, String> {
-        if self.api_key.is_empty() {
-            return Err("Google Gemini API key is missing. Please configure it in settings.".to_string());
+    let mut parts = Vec::new();
+    if let Some(image) = req.image() {
+        parts.push(json!({ "inlineData": { "mimeType": "image/jpeg", "data": image } }));
+    }
+    parts.push(json!({ "text": req.user }));
+    let body = json!({
+        "systemInstruction": { "parts": [{ "text": req.system }] },
+        "contents": [{ "role": "user", "parts": parts }],
+        "generationConfig": { "temperature": 0.2, "maxOutputTokens": req.max_tokens },
+    });
+
+    let client = build_client(timeouts);
+    let model = p.model.strip_prefix("models/").unwrap_or(&p.model);
+    // The key travels in a header, so it never appears in a URL, a log line or an error.
+    let url = format!("{}/models/{}:streamGenerateContent?alt=sse", p.base_url, model);
+    let make = || client.post(&url).header("x-goog-api-key", key).json(&body);
+    let response = send_with_retry(name, &abort, RetryPolicy::default(), make).await?;
+
+    let mut text = String::new();
+    let mut stopped_because = String::new();
+    read_lines(name, response, &abort, &mut text, |line, text| {
+        let Some(data) = sse_data(line) else { return Ok(Flow::Continue) };
+        let Ok(event) = serde_json::from_str::<Value>(data) else { return Ok(Flow::Continue) };
+        if let Some(error) = event.get("error") {
+            let status = error["code"].as_u64().and_then(|c| u16::try_from(c).ok()).unwrap_or(0);
+            return Err(classify_http(name, status, data));
         }
-
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            self.model, self.api_key
-        );
-
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        let mut user_parts: Vec<GeminiPart> = Vec::new();
-        if let Some(img_b64) = image_data {
-            if !img_b64.trim().is_empty() {
-                user_parts.push(GeminiPart::Image {
-                    inline_data: InlineData {
-                        mime_type: "image/jpeg".to_string(),
-                        data: img_b64,
-                    },
-                });
+        if let Some(reason) = event["promptFeedback"]["blockReason"].as_str() {
+            stopped_because = reason.to_string();
+        }
+        for candidate in event["candidates"].as_array().map(Vec::as_slice).unwrap_or_default() {
+            if let Some(reason) = candidate["finishReason"].as_str() {
+                stopped_because = reason.to_string();
             }
-        }
-        user_parts.push(GeminiPart::Text {
-            text: user_prompt,
-        });
-
-        let body = GeminiRequest {
-            system_instruction: GeminiSystemInstruction {
-                parts: vec![GeminiPart::Text {
-                    text: system_prompt,
-                }],
-            },
-            contents: vec![GeminiContent {
-                role: "user".to_string(),
-                parts: user_parts,
-            }],
-            generation_config: GeminiGenerationConfig {
-                temperature: 0.3,
-                max_output_tokens: 2048,
-            },
-        };
-
-        info!("Sending streaming request to Google Gemini (model: {})", self.model);
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("Request to Gemini failed: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let err_text = response.text().await.unwrap_or_default();
-            return Err(format!("Gemini API returned error status {}: {}", status, err_text));
-        }
-
-        let mut stream = response.bytes_stream();
-        let mut full_text = String::new();
-        let mut buffer = String::new();
-
-        while let Some(chunk_res) = stream.next().await {
-            if abort_flag.load(Ordering::SeqCst) {
-                info!("Gemini generation aborted by user.");
-                break;
-            }
-
-            let chunk = chunk_res.map_err(|e| format!("Stream error: {}", e))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line: String = buffer.drain(..=newline_pos).collect();
-                let trimmed = line.trim();
-
-                if trimmed.is_empty() {
+            for part in candidate["content"]["parts"].as_array().map(Vec::as_slice).unwrap_or_default() {
+                if part["thought"].as_bool().unwrap_or(false) {
                     continue;
                 }
-
-                if let Some(json_payload) = trimmed.strip_prefix("data: ") {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(json_payload) {
-                        if let Some(candidates) = parsed.get("candidates").and_then(|c| c.as_array()) {
-                            for cand in candidates {
-                                if let Some(parts) = cand
-                                    .get("content")
-                                    .and_then(|c| c.get("parts"))
-                                    .and_then(|p| p.as_array())
-                                {
-                                    for part in parts {
-                                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                            full_text.push_str(text);
-                                            let payload = serde_json::json!({ "token": text });
-                                            let _ = app_handle.emit_to("main", "llm-token", payload.clone());
-                                            let _ = app_handle.emit("llm-token", payload);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if let Some(token) = part["text"].as_str().filter(|t| !t.is_empty()) {
+                    text.push_str(token);
+                    on_token(token);
                 }
             }
         }
+        Ok(Flow::Continue)
+    })
+    .await?;
 
-        Ok(full_text)
-    }
+    let why_empty = (!stopped_because.is_empty() && stopped_because != "STOP")
+        .then(|| format!("{name} returned no text (reason: {stopped_because})."));
+    finish(name, &abort, text, why_empty)
 }
+
+#[cfg(test)]
+#[path = "gemini_tests.rs"]
+mod tests;

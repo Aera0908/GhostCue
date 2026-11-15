@@ -1,128 +1,99 @@
+//! Local Ollama server: chat, installed models, and what a model can do.
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use futures_util::StreamExt;
-use log::info;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 
-#[derive(Serialize)]
-struct OllamaGenerateRequest {
-    model: String,
-    prompt: String,
-    system: String,
-    stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    images: Option<Vec<String>>,
-}
+use serde_json::{json, Value};
 
-#[derive(Deserialize)]
-struct OllamaStreamResponse {
-    response: Option<String>,
-    done: Option<bool>,
-}
+use super::error::{classify_http, LlmErrorKind, LlmFailure};
+use super::http::{
+    build_client, cancelled, fetch_json, finish, read_lines, send_with_retry, ChatRequest, Flow, HttpTimeouts,
+    OnToken, RetryPolicy,
+};
+use super::provider::ResolvedProvider;
 
-pub struct OllamaClient {
-    endpoint: String,
-    model: String,
-    client: Client,
-}
+const NAME: &str = "Ollama";
 
-impl OllamaClient {
-    pub fn new(endpoint: String, model: String) -> Self {
-        let clean_endpoint = endpoint.trim_end_matches('/').to_string();
-        Self {
-            endpoint: clean_endpoint,
-            model,
-            client: Client::new(),
-        }
+fn with_pull_hint(mut failure: LlmFailure, model: &str) -> LlmFailure {
+    if failure.kind == LlmErrorKind::ModelNotFound {
+        failure.message = format!("Ollama does not have \"{model}\" installed. Run: ollama pull {model}");
     }
-
-    pub async fn stream_generate(
-        &self,
-        app_handle: AppHandle,
-        system_prompt: String,
-        user_prompt: String,
-        image_data: Option<String>,
-        abort_flag: Arc<AtomicBool>,
-    ) -> Result<String, String> {
-        let url = format!("{}/api/generate", self.endpoint);
-
-        info!("Connecting to Ollama at {} with model {}", url, self.model);
-
-        let is_vision_model = self.model.contains("vision")
-            || self.model.contains("llava")
-            || self.model.contains("minicpm")
-            || self.model.contains("moondream");
-
-        let images = if is_vision_model {
-            image_data.and_then(|img| {
-                if img.trim().is_empty() {
-                    None
-                } else {
-                    Some(vec![img.trim().to_string()])
-                }
-            })
-        } else {
-            None
-        };
-
-        let req_body = OllamaGenerateRequest {
-            model: self.model.clone(),
-            prompt: user_prompt,
-            system: system_prompt,
-            stream: true,
-            images,
-        };
-
-        let response = self
-            .client
-            .post(&url)
-            .json(&req_body)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to connect to Ollama ({}): {}", url, e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let err_text = response.text().await.unwrap_or_default();
-            return Err(format!("Ollama returned error status {}: {}", status, err_text));
-        }
-
-        let mut stream = response.bytes_stream();
-        let mut full_response = String::new();
-        let mut buffer = String::new();
-
-        while let Some(chunk_res) = stream.next().await {
-            if abort_flag.load(Ordering::SeqCst) {
-                info!("Ollama streaming aborted by user.");
-                break;
-            }
-
-            let chunk = chunk_res.map_err(|e| format!("Error reading stream chunk: {}", e))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line: String = buffer.drain(..=newline_pos).collect();
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(trimmed) {
-                    if let Some(token) = parsed.response {
-                        full_response.push_str(&token);
-                        let payload = serde_json::json!({ "token": token });
-                        let _ = app_handle.emit_to("main", "llm-token", payload.clone());
-                        let _ = app_handle.emit("llm-token", payload);
-                    }
-                    if parsed.done.unwrap_or(false) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(full_response)
-    }
+    failure
 }
+
+/// The image is sent only when `supports_vision`; otherwise the request goes out as text.
+pub async fn stream_chat(
+    p: &ResolvedProvider,
+    req: ChatRequest<'_>,
+    supports_vision: bool,
+    timeouts: HttpTimeouts,
+    abort: Arc<AtomicBool>,
+    on_token: OnToken<'_>,
+) -> Result<String, LlmFailure> {
+    if abort.load(Ordering::SeqCst) {
+        return Err(cancelled(NAME));
+    }
+    let mut user = json!({ "role": "user", "content": req.user });
+    if let Some(image) = req.image().filter(|_| supports_vision) {
+        user["images"] = json!([image]);
+    }
+    let body = json!({
+        "model": p.model,
+        "stream": true,
+        "messages": [{ "role": "system", "content": req.system }, user],
+    });
+
+    let client = build_client(timeouts);
+    let url = format!("{}/api/chat", p.base_url);
+    let response = send_with_retry(NAME, &abort, RetryPolicy::none(), || client.post(&url).json(&body))
+        .await
+        .map_err(|f| with_pull_hint(f, &p.model))?;
+
+    let mut text = String::new();
+    read_lines(NAME, response, &abort, &mut text, |line, text| {
+        let Ok(event) = serde_json::from_str::<Value>(line) else { return Ok(Flow::Continue) };
+        if event.get("error").is_some() {
+            return Err(with_pull_hint(classify_http(NAME, 0, line), &p.model));
+        }
+        if let Some(token) = event["message"]["content"].as_str().filter(|t| !t.is_empty()) {
+            text.push_str(token);
+            on_token(token);
+        }
+        if event["done"].as_bool().unwrap_or(false) {
+            return Ok(Flow::Stop);
+        }
+        Ok(Flow::Continue)
+    })
+    .await?;
+
+    finish(NAME, &abort, text, None)
+}
+
+/// Names of the models installed on the server. An empty list is a valid answer.
+pub async fn installed_models(base_url: &str, timeouts: HttpTimeouts) -> Result<Vec<String>, LlmFailure> {
+    let reply = fetch_json(NAME, build_client(timeouts).get(format!("{base_url}/api/tags"))).await?;
+    Ok(reply["models"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|m| m["name"].as_str())
+        .map(str::to_string)
+        .collect())
+}
+
+/// Asks the server, instead of guessing from the model's name.
+pub async fn model_supports_vision(base_url: &str, model: &str, timeouts: HttpTimeouts) -> Result<bool, LlmFailure> {
+    let request = build_client(timeouts).post(format!("{base_url}/api/show")).json(&json!({ "model": model }));
+    let reply = fetch_json(NAME, request).await.map_err(|f| with_pull_hint(f, model))?;
+    Ok(reply["capabilities"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .any(|c| c.as_str() == Some("vision")))
+}
+
+#[cfg(test)]
+#[path = "ollama_tests.rs"]
+mod tests;

@@ -31,11 +31,11 @@ crossbeam-channel = "0.5.14"
 parking_lot = "0.12.3"
 uuid = { version = "1.13", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-dotenvy = "0.15"
 rfd = "0.15"
 
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.22"
+keyring = "4.2.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -62,3 +62,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+wiremock = "0.6.5"

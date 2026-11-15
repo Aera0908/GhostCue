@@ -8,16 +8,26 @@ import { AudioMeters } from "./components/hud/AudioMeters";
 import { TranscriptStream, isInterviewerQuestion } from "./components/hud/TranscriptStream";
 import { SuggestionCard } from "./components/hud/SuggestionCard";
 import { ActionControls } from "./components/hud/ActionControls";
-import { SettingsModal } from "./components/settings/SettingsModal";
-import { StartupSessionScreen } from "./components/session/StartupSessionScreen";
-import { DirectoryPermissionModal } from "./components/common/DirectoryPermissionModal";
+import { Home, SettingsSection } from "./features/home/Home";
+import { NewInterview } from "./features/home/NewInterview";
+import { SetupFlow, shouldShowSetup } from "./features/setup/SetupFlow";
+import { Settings } from "./features/settings/Settings";
 import { exportSessionAsTxt } from "./utils/exportTxt";
-import { Sparkles, Maximize, Minus, ShieldCheck, ShieldAlert, Pause, Play } from "lucide-react";
+import { Maximize, Minus } from "lucide-react";
+import { Button } from "./ui/Button";
 import { I18nProvider } from "./i18n";
 
 const STORAGE_SESSIONS_KEY = "ghostcue_interview_sessions";
 const STORAGE_ACTIVE_SESSION_KEY = "ghostcue_active_session_id";
 const STORAGE_LAYOUT_MODE_KEY = "ghostcue_layout_mode";
+
+// Shown in the answer area while the screen is being read, before any answer text arrives.
+const SCREEN_STATUS = {
+  reading: "Reading the screen.",
+  solving: "Solving the problem found on screen.",
+  looking: "Looking at the screenshot.",
+};
+const isScreenStatus = (text: string) => Object.values(SCREEN_STATUS).includes(text);
 
 // Computes bit difference between two 64-bit hex hash strings
 const getHexHammingDistance = (h1: string, h2: string): number => {
@@ -72,6 +82,19 @@ export const App: React.FC = () => {
   const [opacity, setOpacity] = useState<number>(0.94);
   const [clickThrough, setClickThrough] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  const [startupNotice, setStartupNotice] = useState<string | null>(null);
+  const [homeRefresh, setHomeRefresh] = useState(0);
+  const [view, setView] = useState<"setup" | "home" | "new">(() => {
+    let saved = 0;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_SESSIONS_KEY) ?? "[]");
+      saved = Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      saved = 0;
+    }
+    return shouldShowSetup(saved) ? "setup" : "home";
+  });
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
   const [hudToast, setHudToast] = useState<{ message: string; type?: "info" | "success" | "warning" } | null>(null);
@@ -116,65 +139,9 @@ export const App: React.FC = () => {
   const [llmError, setLlmError] = useState<string | null>(null);
 
   // Split view sizing
-  const [splitPercent, setSplitPercent] = useState<number>(42);
+  const [splitPercent, setSplitPercent] = useState<number>(32);
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Directory Access Permission Prompt (first-run)
-  const [showDirectoryPermissionPrompt, setShowDirectoryPermissionPrompt] = useState<boolean>(() => {
-    return !localStorage.getItem("ghostcue_directory_permission");
-  });
-
-  const [isGrantingDirectory, setIsGrantingDirectory] = useState<boolean>(false);
-
-  const handleGrantDirectoryPermission = async () => {
-    localStorage.setItem("ghostcue_directory_permission", "granted");
-    setIsGrantingDirectory(true);
-    try {
-      const chosenDir = await TauriApi.selectDirectoryDialog();
-      if (chosenDir && chosenDir.trim().length > 0) {
-        const cleanPath = chosenDir.trim();
-        const summary = await TauriApi.scanProjectDirectory(cleanPath);
-        const newDirs = config.project_directories?.includes(cleanPath)
-          ? config.project_directories
-          : [...(config.project_directories || []), cleanPath];
-        const newConfig: AppConfig = {
-          ...config,
-          project_directory: cleanPath,
-          project_directories: newDirs,
-          project_context: summary || "",
-        };
-        setConfig(newConfig);
-        await TauriApi.saveConfig(newConfig);
-
-        if (activeSessionId) {
-          updateSessionsState((sessList) =>
-            sessList.map((s) =>
-              s.id === activeSessionId
-                ? {
-                    ...s,
-                    projectDirectory: cleanPath,
-                    projectDirectories: newDirs,
-                    projectContext: summary || "",
-                    lastActive: new Date().toISOString(),
-                  }
-                : s
-            )
-          );
-        }
-      }
-    } catch (err) {
-      console.warn("Directory grant & scan error:", err);
-    } finally {
-      setIsGrantingDirectory(false);
-      setShowDirectoryPermissionPrompt(false);
-    }
-  };
-
-  const handleDismissDirectoryPermission = () => {
-    localStorage.setItem("ghostcue_directory_permission", "dismissed");
-    setShowDirectoryPermissionPrompt(false);
-  };
 
   const activePromptRef = useRef<{ id: string; action: string; query?: string; timestamp: string } | null>(null);
 
@@ -503,7 +470,7 @@ export const App: React.FC = () => {
 
         const u5 = await TauriApi.onLlmToken((ev) => {
           setSuggestion((prev) => {
-            if (prev.startsWith("📸") || prev.startsWith("🧠")) {
+            if (isScreenStatus(prev)) {
               return ev.token;
             }
             return prev + ev.token;
@@ -528,7 +495,12 @@ export const App: React.FC = () => {
           }
         });
 
-        unlistens = [u1, u2, u3, u4, u5, u6, u7];
+        const u8 = await TauriApi.onLlmNotice((ev) => showHudToast(ev.message, "warning"));
+        TauriApi.getConfigNotice()
+          .then((notice) => notice && setStartupNotice(notice))
+          .catch(() => {});
+
+        unlistens = [u1, u2, u3, u4, u5, u6, u7, u8];
       } catch (err) {
         console.error("Initialization error:", err);
       }
@@ -980,8 +952,8 @@ export const App: React.FC = () => {
     await TauriApi.saveConfig(newConfig);
     showHudToast(
       updated
-        ? "Focus Shield ON: Clicks will not steal focus from exam"
-        : "Focus Shield OFF: Typing enabled in GhostCue",
+        ? "Clicking this window no longer takes keyboard focus."
+        : "This window takes keyboard focus again.",
       updated ? "success" : "warning"
     );
   };
@@ -1022,8 +994,8 @@ export const App: React.FC = () => {
     await TauriApi.saveConfig(newConfig);
     showHudToast(
       next
-        ? `Live Screen OCR ON (Scanning every ${newConfig.live_ocr_interval_secs || 10}s)`
-        : "Live Screen OCR OFF",
+        ? `Reading the screen every ${newConfig.live_ocr_interval_secs || 10} seconds.`
+        : "No longer reading the screen.",
       next ? "success" : "info"
     );
   };
@@ -1143,7 +1115,7 @@ export const App: React.FC = () => {
 
     if (action === "vision") {
       if (!customQuery && !base64Image) {
-        setSuggestion("🔍 Parsing screen with native local OCR (0 vision tokens)...");
+        setSuggestion(SCREEN_STATUS.reading);
         try {
           const captureRes = await TauriApi.captureScreenForOcr();
           if (captureRes) {
@@ -1156,10 +1128,10 @@ export const App: React.FC = () => {
               promptQuery = `[Visible Screen Problem & Code (Extracted Locally via Native OCR)]:\n\n${extracted}`;
               customQuery = promptQuery;
               base64Image = undefined; // Prefer extracted text over image payload
-              setSuggestion(`🧠 Solving extracted problem (${extracted.length} chars) with ${configRef.current.llm_provider || "AI"}...`);
+              setSuggestion(SCREEN_STATUS.solving);
             } else if (captureRes.base64_image) {
               base64Image = captureRes.base64_image;
-              setSuggestion(`📸 Analyzing diagram screenshot with ${configRef.current.llm_provider || "AI"}...`);
+              setSuggestion(SCREEN_STATUS.looking);
             }
           }
         } catch (capErr: any) {
@@ -1170,9 +1142,9 @@ export const App: React.FC = () => {
           return;
         }
       } else if (customQuery) {
-        setSuggestion(`🧠 Solving extracted problem with ${configRef.current.llm_provider || "AI"}...`);
+        setSuggestion(SCREEN_STATUS.solving);
       } else {
-        setSuggestion(`📸 Analyzing screen with ${configRef.current.llm_provider || "AI"}...`);
+        setSuggestion(SCREEN_STATUS.looking);
       }
     }
 
@@ -1181,7 +1153,7 @@ export const App: React.FC = () => {
       if (currentReqId !== generationCounterRef.current) return;
       if (res && res.trim().length > 0) {
         setSuggestion((prev) => {
-          if (!prev || prev.startsWith("📸") || prev.startsWith("🧠")) {
+          if (!prev || isScreenStatus(prev)) {
             return res;
           }
           return prev;
@@ -1229,11 +1201,6 @@ export const App: React.FC = () => {
     isStreamingRef.current = false;
   };
 
-  const handleLiveConfigUpdate = (key: keyof AppConfig, value: any) => {
-    configRef.current = { ...configRef.current, [key]: value };
-    setConfig((prev) => ({ ...prev, [key]: value }));
-  };
-
   const handleSaveSettings = async (newConfig: AppConfig) => {
     const oldConfig = configRef.current;
     const saved = await TauriApi.saveConfig(newConfig);
@@ -1261,8 +1228,33 @@ export const App: React.FC = () => {
     }
   };
 
+  const applyConfigPatch = (patch: Partial<AppConfig>) => handleSaveSettings({ ...configRef.current, ...patch });
+
+  const openSettings = (section?: SettingsSection) => {
+    setSettingsSection(section);
+    setIsSettingsOpen(true);
+  };
+
+  const settingsScreen = isSettingsOpen ? (
+    <Settings
+      config={config}
+      onChange={applyConfigPatch}
+      onClose={() => {
+        setIsSettingsOpen(false);
+        setHomeRefresh((n) => n + 1);
+      }}
+      onRunSetup={() => {
+        setIsSettingsOpen(false);
+        setInLiveHud(false);
+        setView("setup");
+      }}
+      inLiveHud={inLiveHud}
+      initialSection={settingsSection}
+    />
+  ) : null;
+
   const handleFontSizeChange = (size: number) => {
-    const clamped = Math.max(11, Math.min(22, size));
+    const clamped = Math.max(12, Math.min(22, size));
     handleSaveSettings({ ...config, font_size: clamped });
   };
 
@@ -1275,125 +1267,110 @@ export const App: React.FC = () => {
         initialLocale={config.ui_language}
         onLocaleChange={(l) => setConfig((prev) => ({ ...prev, ui_language: l }))}
       >
-        <main className="relative flex flex-col h-screen w-screen overflow-hidden font-sans">
-          <StartupSessionScreen
+        {view === "setup" ? (
+          <SetupFlow config={config} onChange={applyConfigPatch} onDone={() => setView("home")} />
+        ) : view === "new" ? (
+          <NewInterview
+            config={config}
+            onCancel={() => setView("home")}
+            onCreate={(data) => {
+              handleCreateSession(data);
+              handleStartLiveHud();
+              setView("home");
+            }}
+          />
+        ) : (
+          <Home
+            config={config}
             sessions={sessions}
-            activeSessionId={activeSessionId}
-            config={config}
-            onSelectSession={handleSelectSession}
-            onCreateSession={handleCreateSession}
-            onDeleteSession={handleDeleteSession}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onStartLiveHud={handleStartLiveHud}
+            notice={startupNotice}
+            refreshToken={homeRefresh}
+            onDismissNotice={() => setStartupNotice(null)}
+            onNew={() => setView("new")}
+            onOpen={(id) => {
+              handleSelectSession(id);
+              handleStartLiveHud();
+            }}
+            onDelete={handleDeleteSession}
+            onExport={(session) => void exportSessionAsTxt(session, config)}
+            onSettings={openSettings}
           />
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            config={config}
-            onSave={handleSaveSettings}
-            onLiveUpdate={handleLiveConfigUpdate}
-            inLiveHud={inLiveHud}
-          />
-          <DirectoryPermissionModal
-            isOpen={showDirectoryPermissionPrompt}
-            onGrant={handleGrantDirectoryPermission}
-            onDismiss={handleDismissDirectoryPermission}
-            isGranting={isGrantingDirectory}
-          />
-        </main>
+        )}
+        {settingsScreen}
       </I18nProvider>
     );
   }
 
-  // Compact Pill HUD Mode
+  // Small bar: the window shrunk to the few controls needed mid-interview.
   if (isCompactPill) {
+    const bar = (level: number, active: boolean, muted: boolean) =>
+      isPaused || muted ? 0 : Math.min(1, Math.max(active ? 0.08 : 0, level));
     return (
       <I18nProvider
         initialLocale={config.ui_language}
         onLocaleChange={(l) => setConfig((prev) => ({ ...prev, ui_language: l }))}
       >
         <main
-          data-tauri-drag-region
           onMouseDown={(e) => {
-            if (!(e.target as HTMLElement).closest("button, [role='button']")) {
+            if (e.button === 0 && !(e.target as HTMLElement).closest("button")) {
               TauriApi.startDragging();
             }
           }}
-          className="relative flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-full shadow-2xl select-none font-sans"
-          style={{ backgroundColor: `rgba(15, 23, 42, ${opacity})` }}
+          className="relative flex h-11 select-none items-center gap-3 rounded-lg border border-g-line px-3 font-sans"
+          style={{ backgroundColor: `rgba(14, 15, 17, ${opacity})` }}
         >
-          {/* Floating Notification Toast */}
           {hudToast && (
-            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-slate-900/95 border border-indigo-500/60 rounded-full shadow-xl text-[11px] font-semibold text-slate-100 flex items-center gap-1.5 pointer-events-none whitespace-nowrap animate-in fade-in">
-              <ShieldAlert className={`w-3 h-3 ${hudToast.type === 'success' ? 'text-emerald-400' : 'text-amber-400'}`} />
-              <span>{hudToast.message}</span>
+            <div
+              role="status"
+              className="pointer-events-none absolute -bottom-9 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-md border border-g-lineStrong bg-g-raised px-3 py-1 text-xs text-g-text"
+            >
+              {hudToast.message}
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-xs text-slate-300 font-semibold px-2 py-0.5 bg-slate-800 rounded-full">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>GhostCue</span>
-            </div>
-
-            <div className="flex items-center gap-1.5 px-2 text-xs">
-              <span
-                className={`w-2 h-2 rounded-full ${loopbackActive ? "bg-sky-400 animate-pulse" : "bg-slate-600"}`}
-                title="Interviewer voice activity"
-              />
-              <span
-                className={`w-2 h-2 rounded-full ${micActive ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`}
-                title="Candidate voice activity"
-              />
-            </div>
+          <span className="text-[13px] font-medium text-g-text">GhostCue</span>
+          <div className="flex w-24 flex-col gap-1" aria-hidden="true">
+            {[bar(loopbackLevel, loopbackActive, loopbackMuted), bar(micLevel, micActive, micMuted)].map((level, i) => (
+              <div key={i} className="h-1 overflow-hidden rounded-full bg-g-line">
+                <div
+                  className="h-full origin-left bg-g-accent transition-transform duration-100 ease-out motion-reduce:transition-none"
+                  style={{ transform: `scaleX(${level})` }}
+                />
+              </div>
+            ))}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Pause button in compact pill */}
-            <button
-              type="button"
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant={isPaused ? "primary" : "secondary"}
               onClick={handleTogglePause}
-              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-full transition-colors ${
-                isPaused
-                  ? "bg-amber-500/30 text-amber-300 border border-amber-400/80 animate-pulse"
-                  : "bg-slate-800 hover:bg-slate-700 text-slate-300"
-              }`}
-              title={isPaused ? "Resume (Ctrl+Shift+P)" : "Pause (Ctrl+Shift+P)"}
+              title={isPaused ? "Resume listening (Ctrl+Shift+P)" : "Pause listening (Ctrl+Shift+P)"}
             >
-              {isPaused ? <Play className="w-3 h-3 text-amber-400 fill-amber-400" /> : <Pause className="w-3 h-3 text-slate-400" />}
-              <span>{isPaused ? "Resume" : "Pause"}</span>
-            </button>
-
-            <button
-              type="button"
+              {isPaused ? "Resume" : "Pause"}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
               onClick={() => handleTriggerAction("hint")}
               disabled={isStreaming || isPaused}
-              className="flex items-center gap-1 px-3 py-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
-              title="Instant Answer (Ctrl+Shift+Space)"
+              title="Answer the last question (Ctrl+Shift+Space)"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Answer</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={async () => {
-                await TauriApi.minimizeWindow();
-              }}
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-colors"
-              title="Minimize Window"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
+              Answer
+            </Button>
+            <Button size="sm" variant="ghost" aria-label="Minimize" title="Minimize" className="px-2" onClick={() => void TauriApi.minimizeWindow()}>
+              <Minus className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Show the full window"
+              title="Show the full window"
+              className="px-2"
               onClick={() => setIsCompactPill(false)}
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-colors"
-              title="Expand Full HUD"
             >
-              <Maximize className="w-3.5 h-3.5" />
-            </button>
+              <Maximize className="h-4 w-4" aria-hidden="true" />
+            </Button>
           </div>
         </main>
       </I18nProvider>
@@ -1406,9 +1383,9 @@ export const App: React.FC = () => {
       onLocaleChange={(l) => setConfig((prev) => ({ ...prev, ui_language: l }))}
     >
       <main
-        className="relative flex flex-col h-screen w-screen overflow-hidden select-none font-sans rounded-xl border border-slate-700/60 shadow-2xl"
+        className="relative flex flex-col h-screen w-screen overflow-hidden select-none font-sans rounded-lg border border-g-line"
         style={{
-          backgroundColor: `rgba(11, 16, 27, ${opacity})`,
+          backgroundColor: `rgba(14, 15, 17, ${opacity})`,
           ['--hud-font-size' as any]: `${config.font_size || 14}px`,
         }}
       >
@@ -1420,7 +1397,7 @@ export const App: React.FC = () => {
           onToggleFocusShield={handleToggleFocusShield}
           onToggleAutoTrigger={handleToggleAutoTrigger}
           onToggleLiveOcr={handleToggleLiveOcr}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => openSettings()}
           onOpenSessions={() => setInLiveHud(false)}
           layoutMode={layoutMode}
           onChangeLayoutMode={handleChangeLayoutMode}
@@ -1434,9 +1411,11 @@ export const App: React.FC = () => {
 
         {/* Floating Notification Toast */}
         {hudToast && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 bg-slate-900/95 border border-indigo-500/60 rounded-full shadow-2xl text-xs font-semibold text-slate-100 flex items-center gap-2 pointer-events-none backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150">
-            <ShieldAlert className={`w-3.5 h-3.5 ${hudToast.type === 'success' ? 'text-emerald-400' : 'text-amber-400'}`} />
-            <span>{hudToast.message}</span>
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-12 z-40 max-w-[90%] -translate-x-1/2 rounded-md border border-g-lineStrong bg-g-raised px-3 py-1.5 text-xs text-g-text"
+          >
+            {hudToast.message}
           </div>
         )}
 
@@ -1478,10 +1457,10 @@ export const App: React.FC = () => {
                 e.preventDefault();
                 setIsDraggingSplit(true);
               }}
-              className="group relative h-2 bg-slate-900 hover:bg-slate-800 cursor-row-resize flex items-center justify-center border-y border-slate-800 transition-colors z-20 select-none"
-              title="Drag to resize panels"
+              className="group relative z-20 flex h-2 cursor-row-resize select-none items-center justify-center border-y border-g-line hover:bg-g-hover active:bg-g-raised"
+              title="Drag to resize"
             >
-              <div className="w-12 h-1 bg-slate-600 group-hover:bg-sky-400 rounded-full transition-colors" />
+              <div className="h-0.5 w-10 rounded-full bg-g-lineStrong group-hover:bg-g-accent" />
             </div>
 
             {/* Lower: AI Suggestion & Code Studio */}
@@ -1554,23 +1533,7 @@ export const App: React.FC = () => {
           onCancel={handleCancelAi}
         />
 
-        {/* 5. Settings Modal (Includes Hotkeys & Shortcuts guide) */}
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          config={config}
-          onSave={handleSaveSettings}
-          onLiveUpdate={handleLiveConfigUpdate}
-          inLiveHud={inLiveHud}
-        />
-
-        {/* 7. Directory Access Permission Modal */}
-        <DirectoryPermissionModal
-          isOpen={showDirectoryPermissionPrompt}
-          onGrant={handleGrantDirectoryPermission}
-          onDismiss={handleDismissDirectoryPermission}
-          isGranting={isGrantingDirectory}
-        />
+        {settingsScreen}
       </main>
     </I18nProvider>
   );

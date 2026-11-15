@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Copy, Check, Terminal, FileCode, Zap, Columns2, Rows2, Keyboard, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -90,15 +89,15 @@ export const normalizeLatexMarkdown = (text: string): string => {
 
 const customMarkdownComponents = {
   table: ({ ...props }: any) => (
-    <div className="overflow-x-auto my-2.5 rounded-lg border border-slate-800 bg-slate-950/60">
+    <div className="my-2.5 overflow-x-auto rounded-md border border-g-line">
       <table className="w-full border-collapse text-xs font-sans" {...props} />
     </div>
   ),
   th: ({ ...props }: any) => (
-    <th className="bg-slate-900/90 border-b border-slate-800 px-3 py-1.5 text-left font-semibold text-sky-400" {...props} />
+    <th className="border-b border-g-line bg-g-raised px-3 py-1.5 text-left font-medium text-g-text" {...props} />
   ),
   td: ({ ...props }: any) => (
-    <td className="border-b border-slate-800/60 px-3 py-1.5 text-slate-200" {...props} />
+    <td className="border-b border-g-line px-3 py-1.5 text-g-text" {...props} />
   ),
   code: ({ className, children, ...props }: any) => {
     const match = /language-(\w+)/.exec(className || "");
@@ -110,21 +109,16 @@ const customMarkdownComponents = {
       );
     }
     return (
-      <code className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-sky-300 font-mono text-[11px]" {...props}>
+      <code className="rounded border border-g-line bg-g-raised px-1 py-0.5 font-mono text-[0.9em] font-normal text-g-text before:content-none after:content-none" {...props}>
         {children}
       </code>
     );
   },
 };
 
-export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
-  content,
-  isStreaming,
-  fontSize = 14,
-}) => {
+export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({ content, isStreaming, fontSize = 14 }) => {
   const { t } = useTranslation();
   const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<"split" | "stacked" | "code-only">("split");
   const [selectedBlockIdx, setSelectedBlockIdx] = useState<number>(0);
   const [isStealthTyping, setIsStealthTyping] = useState<boolean>(false);
   const [stealthCountdown, setStealthCountdown] = useState<number | null>(null);
@@ -141,7 +135,7 @@ export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
   const handleStartStealthType = async (code: string) => {
     if (isStealthTyping || !code.trim()) return;
 
-    // Countdown before simulated typing starts
+    // A short countdown gives time to click into the editor that should receive the code.
     setStealthCountdown(2);
     const interval = setInterval(() => {
       setStealthCountdown((prev) => {
@@ -167,241 +161,100 @@ export const IdeCodeStudio: React.FC<IdeCodeStudioProps> = ({
     }, 2000);
   };
 
+  const prose = "prose prose-invert max-w-none select-text font-sans leading-relaxed text-g-text";
+  const markdown = (text: string) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
+      components={customMarkdownComponents}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+  // While an answer is being written, a steady bar marks where the next words will appear.
+  const caret = isStreaming ? <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-1.5 bg-g-accent align-middle" /> : null;
+
   if (!parsed.hasCode) {
-    const formattedContent = normalizeLatexMarkdown(content);
     return (
-      <div
-        className="prose prose-invert max-w-none text-slate-100 font-sans leading-relaxed"
-        style={{ fontSize: `${fontSize}px` }}
-      >
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
-          components={customMarkdownComponents}
-        >
-          {formattedContent}
-        </ReactMarkdown>
-        {isStreaming && (
-          <span className="inline-block w-2 h-4 ml-1 bg-sky-400 rounded-sm animate-pulse align-middle" />
-        )}
+      <div className={prose} style={{ fontSize: `${fontSize}px` }}>
+        {markdown(normalizeLatexMarkdown(content))}
+        {caret}
       </div>
     );
   }
 
   const lines = activeCodeBlock ? activeCodeBlock.code.split("\n") : [];
+  const explanation = normalizeLatexMarkdown(parsed.explanation);
+  const quiet =
+    "rounded px-1.5 py-0.5 text-xs text-g-muted hover:bg-g-hover hover:text-g-text active:bg-g-base disabled:opacity-40 " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-g-accent";
 
   return (
-    <div className="flex flex-col gap-2.5 w-full h-full flex-1 min-h-0 font-sans">
-      {/* View Switcher Strip */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-lg text-xs select-none shrink-0">
-        <div className="flex items-center gap-2 text-slate-200">
-          <span className="font-semibold text-slate-100">{t.codeStudio.tabCode}</span>
-          {parsed.codeBlocks.length > 1 && (
-            <div className="flex items-center gap-1 ml-2">
-              {parsed.codeBlocks.map((b, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setSelectedBlockIdx(i)}
-                  className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
-                    selectedBlockIdx === i
-                      ? "bg-slate-700 text-slate-100 font-bold"
-                      : "bg-slate-900 text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  #{i + 1} ({b.language})
-                </button>
-              ))}
+    <div className="flex w-full flex-col gap-3 font-sans">
+      {explanation && (
+        <div className={prose} style={{ fontSize: `${fontSize}px` }}>
+          {markdown(explanation)}
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-md border border-g-line">
+        <div className="flex h-8 select-none items-center gap-1 border-b border-g-line bg-g-raised px-2 text-xs">
+          {parsed.codeBlocks.length > 1 ? (
+            parsed.codeBlocks.map((block, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-pressed={selectedBlockIdx === i}
+                onClick={() => setSelectedBlockIdx(i)}
+                className={`${quiet} font-mono ${selectedBlockIdx === i ? "bg-g-base text-g-text" : ""}`}
+              >
+                {i + 1}. {block.language}
+              </button>
+            ))
+          ) : (
+            <span className="px-1.5 font-mono text-g-muted">{activeCodeBlock ? activeCodeBlock.language : t.codeStudio.tabCode}</span>
+          )}
+
+          {activeCodeBlock && (
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                className={quiet}
+                onClick={() => handleStartStealthType(activeCodeBlock.code)}
+                disabled={isStealthTyping || stealthCountdown !== null}
+                title="Types this code into the window you click next, one key at a time (Ctrl+Shift+T)"
+              >
+                {isStealthTyping
+                  ? "Typing"
+                  : stealthCountdown !== null
+                    ? `Click your editor, ${stealthCountdown}`
+                    : "Type into editor"}
+              </button>
+              <button type="button" className={quiet} onClick={() => handleCopyCode(activeCodeBlock.code, selectedBlockIdx)} title={t.codeStudio.copySnippet}>
+                {copiedCodeIdx === selectedBlockIdx ? t.common.copied : t.common.copy}
+              </button>
             </div>
           )}
         </div>
 
-        {/* Switcher Buttons */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setViewMode("split")}
-            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${
-              viewMode === "split"
-                ? "bg-sky-600 text-white font-semibold"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            title="Split View"
-          >
-            <Columns2 className="w-3 h-3" />
-            <span>Split</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode("stacked")}
-            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${
-              viewMode === "stacked"
-                ? "bg-sky-600 text-white font-semibold"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            title="Stacked View"
-          >
-            <Rows2 className="w-3 h-3" />
-            <span>Stacked</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode("code-only")}
-            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${
-              viewMode === "code-only"
-                ? "bg-sky-600 text-white font-semibold"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            title="Code Only View"
-          >
-            <Terminal className="w-3 h-3" />
-            <span>Code Only</span>
-          </button>
+        <div className="overflow-x-auto bg-g-base p-3 font-mono leading-relaxed" style={{ fontSize: `${Math.max(12, fontSize - 1)}px` }}>
+          {activeCodeBlock ? (
+            <table className="w-full border-collapse">
+              <tbody>
+                {lines.map((line, lineIdx) => (
+                  <tr key={lineIdx}>
+                    <td className="w-7 select-none pr-4 text-right align-top tabular-nums text-g-muted/60">{lineIdx + 1}</td>
+                    <td className="select-text whitespace-pre text-g-text">{line || " "}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="py-4 text-[13px] text-g-muted">{t.codeStudio.noSnippets}</p>
+          )}
         </div>
       </div>
-
-      {/* Main Content Area */}
-      <div
-        className={`w-full flex-1 min-h-0 ${
-          viewMode === "split"
-            ? "grid grid-cols-1 min-[620px]:grid-cols-12 gap-3 h-full"
-            : "flex flex-col gap-3 h-full"
-        }`}
-      >
-        {/* Left Column: Talking points & explanation */}
-        {viewMode !== "code-only" && (
-          <div
-            className={`${
-              viewMode === "split" ? "min-[620px]:col-span-5 h-full" : "w-full"
-            } flex flex-col gap-2 p-3.5 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 leading-relaxed overflow-y-auto scrollbar-thin min-h-0`}
-          >
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 pb-1.5 border-b border-slate-800 shrink-0">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>{t.codeStudio.tabExplanation}</span>
-            </div>
-
-            <div
-              className="prose prose-invert max-w-none text-slate-100 leading-relaxed font-sans select-text flex-1"
-              style={{ fontSize: `${fontSize}px` }}
-            >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
-                components={customMarkdownComponents}
-              >
-                {normalizeLatexMarkdown(parsed.explanation) || "Implementation details provided in code viewer."}
-              </ReactMarkdown>
-            </div>
-          </div>
-        )}
-
-        {/* Right Column: Code viewer */}
-        <div
-          className={`${
-            viewMode === "split" ? "min-[620px]:col-span-7 h-full" : "w-full"
-          } flex flex-col bg-slate-950 border border-slate-800 rounded-lg overflow-hidden min-h-0 flex-1`}
-        >
-          {/* Code Header */}
-          <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-900 border-b border-slate-800 text-xs select-none shrink-0">
-            <div className="flex items-center gap-2">
-              <FileCode className="w-3.5 h-3.5 text-sky-400" />
-              <span className="font-mono uppercase text-xs font-semibold text-slate-100">
-                {activeCodeBlock ? activeCodeBlock.language : "Code"}
-              </span>
-            </div>
-
-            {activeCodeBlock && (
-              <div className="flex items-center gap-1.5">
-                {/* Stealth Typer Button (Bypasses editor paste detection on assessment platforms) */}
-                <button
-                  type="button"
-                  onClick={() => handleStartStealthType(activeCodeBlock.code)}
-                  disabled={isStealthTyping || stealthCountdown !== null}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded font-medium transition-all ${
-                    isStealthTyping
-                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"
-                      : stealthCountdown !== null
-                      ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
-                      : "bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40"
-                  }`}
-                  title="Bypass Editor Paste Detection: Automatically types this code keystroke-by-keystroke into your active editor (Ctrl+Shift+T)"
-                >
-                  {isStealthTyping ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                      <span>Typing code...</span>
-                    </>
-                  ) : stealthCountdown !== null ? (
-                    <>
-                      <Keyboard className="w-3.5 h-3.5 text-sky-400 animate-bounce" />
-                      <span>Focus Editor ({stealthCountdown}s)...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Keyboard className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Stealth Type</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleCopyCode(activeCodeBlock.code, selectedBlockIdx)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs rounded font-medium transition-colors border border-slate-700"
-                  title={t.codeStudio.copySnippet}
-                >
-                  {copiedCodeIdx === selectedBlockIdx ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-400 font-semibold">{t.common.copied}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{t.common.copy}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Code Table */}
-          <div
-            className="p-3.5 overflow-auto flex-1 min-h-0 bg-slate-950 font-mono leading-relaxed scrollbar-thin"
-            style={{ fontSize: `${Math.max(10, fontSize - 1)}px` }}
-          >
-            {activeCodeBlock ? (
-              <table className="w-full border-collapse">
-                <tbody>
-                  {lines.map((line, lineIdx) => (
-                    <tr key={lineIdx} className="hover:bg-slate-900/60 transition-colors group">
-                      <td
-                        className="pr-4 text-right select-none text-slate-500 group-hover:text-slate-400 font-mono w-7 align-top"
-                        style={{ fontSize: `${Math.max(10, fontSize - 2)}px` }}
-                      >
-                        {lineIdx + 1}
-                      </td>
-                      <td
-                        className="text-slate-100 font-mono whitespace-pre select-text"
-                        style={{ fontSize: `${Math.max(10, fontSize - 1)}px` }}
-                      >
-                        {line || " "}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="text-slate-500 italic text-center py-6 text-sm">
-                {t.codeStudio.noSnippets}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      {caret}
     </div>
   );
 };

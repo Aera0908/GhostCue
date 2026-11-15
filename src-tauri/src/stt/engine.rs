@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::audio::vad::VadSegment;
 use crate::config::AppConfig;
+use crate::secrets::{KeyId, SecretStore};
 use super::deepgram::DeepgramClient;
 use super::whisper::LocalWhisperEngine;
 
@@ -56,6 +57,7 @@ impl SttEngineManager {
         receiver: Receiver<VadSegment>,
         history: Arc<RwLock<Vec<TranscriptSegment>>>,
         get_config_fn: impl Fn() -> AppConfig + Send + Sync + 'static,
+        secrets: Arc<dyn SecretStore>,
         _trigger_llm_fn: impl Fn(String) + Send + Sync + 'static,
     ) {
         info!("STT background worker loop started.");
@@ -74,6 +76,10 @@ impl SttEngineManager {
             };
 
             let config = get_config_fn();
+            let groq_key = secrets.get(KeyId::Groq).unwrap_or_default();
+            let openai_key = secrets.get(KeyId::OpenAi).unwrap_or_default();
+            let openrouter_key = secrets.get(KeyId::OpenRouter).unwrap_or_default();
+            let deepgram_key = secrets.get(KeyId::Deepgram).unwrap_or_default();
             let speaker = if segment.speaker_is_interviewer {
                 "Interviewer"
             } else {
@@ -104,22 +110,22 @@ impl SttEngineManager {
             );
 
             // Run transcription with configured STT provider
-            let transcript_result = if config.stt_provider == "groq" || (config.stt_provider == "cloud_whisper" && !config.groq_api_key.is_empty() && config.openai_api_key.is_empty()) {
+            let transcript_result = if config.stt_provider == "groq" || (config.stt_provider == "cloud_whisper" && !groq_key.is_empty() && openai_key.is_empty()) {
                 super::whisper::transcribe_with_groq_whisper(
-                    &config.groq_api_key,
+                    &groq_key,
                     &config.groq_whisper_model,
                     &segment.samples,
                     &config.stt_language,
                 ).await
             } else if config.stt_provider == "openrouter" {
                 super::whisper::transcribe_with_openrouter(
-                    &config.openrouter_api_key,
+                    &openrouter_key,
                     "google/gemini-2.5-flash",
                     &segment.samples,
                     &config.stt_language,
                 ).await
-            } else if config.stt_provider == "deepgram" && !config.deepgram_api_key.is_empty() {
-                let deepgram = DeepgramClient::new(config.deepgram_api_key.clone());
+            } else if config.stt_provider == "deepgram" && !deepgram_key.is_empty() {
+                let deepgram = DeepgramClient::new(deepgram_key.clone());
                 deepgram.transcribe_buffer(&segment.samples, &config.stt_language).await
             } else if config.stt_provider == "local_whisper" || !config.whisper_model_path.is_empty() {
                 let samples = segment.samples.clone();
@@ -133,23 +139,23 @@ impl SttEngineManager {
                     let whisper = LocalWhisperEngine::new(valid_path);
                     whisper.transcribe(&samples, &lang)
                 }).await.unwrap_or_else(|e| Err(format!("Whisper task failed: {}", e)))
-            } else if !config.openai_api_key.is_empty() {
+            } else if !openai_key.is_empty() {
                 super::whisper::transcribe_with_cloud_whisper(
-                    &config.openai_api_key,
+                    &openai_key,
                     &config.openai_base_url,
                     &segment.samples,
                     &config.stt_language,
                 ).await
-            } else if !config.groq_api_key.is_empty() {
+            } else if !groq_key.is_empty() {
                 super::whisper::transcribe_with_groq_whisper(
-                    &config.groq_api_key,
+                    &groq_key,
                     &config.groq_whisper_model,
                     &segment.samples,
                     &config.stt_language,
                 ).await
-            } else if !config.openrouter_api_key.is_empty() {
+            } else if !openrouter_key.is_empty() {
                 super::whisper::transcribe_with_openrouter(
-                    &config.openrouter_api_key,
+                    &openrouter_key,
                     "google/gemini-2.5-flash",
                     &segment.samples,
                     &config.stt_language,

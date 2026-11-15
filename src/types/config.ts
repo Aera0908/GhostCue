@@ -1,4 +1,7 @@
+/** Saved settings. API keys are not here: they live in Windows Credential Manager. */
 export interface AppConfig {
+  config_version?: number;
+
   // Window & Stealth
   anti_capture_enabled: boolean;
   focus_shield_enabled?: boolean;
@@ -28,27 +31,20 @@ export interface AppConfig {
   stt_provider: "cloud_whisper" | "local_whisper" | "deepgram" | "groq" | "openrouter" | "mock" | string;
   whisper_model_path: string;
   whisper_model_size: string;
-  deepgram_api_key: string;
-  groq_api_key?: string;
   groq_whisper_model?: string;
 
   // LLM Provider
   llm_provider: "openrouter" | "gemini" | "ollama" | "openai" | "anthropic" | "groq" | "deepseek" | "custom" | string;
-  openrouter_api_key?: string;
   openrouter_model?: string;
-  gemini_api_key: string;
   gemini_model: string;
   ollama_endpoint: string;
   ollama_model: string;
-  openai_api_key: string;
   openai_model: string;
   openai_base_url: string;
-  anthropic_api_key: string;
   anthropic_model: string;
-  deepseek_api_key?: string;
   deepseek_model?: string;
+  groq_model?: string;
   custom_endpoint: string;
-  custom_api_key: string;
   custom_model: string;
 
   // Interview Context & Prompts
@@ -68,4 +64,6 @@ export interface AppConfig {
   live_ocr_smart_diff?: boolean;
   max_context_turns: number;
   smart_model_routing?: boolean;
+  /** Used only when smart_model_routing is on: provider id to model for code and screen tasks. */
+  code_models?: Record<string, string>;
 }

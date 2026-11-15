@@ -3,15 +3,16 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { AppConfig } from "../types/config";
 import { AudioDevicesResponse, AudioLevelEvent } from "../types/audio";
 import { TranscriptSegment } from "../types/transcript";
-import { LlmCompleteEvent, LlmErrorEvent, LlmStartEvent, LlmTokenEvent } from "../types/llm";
+import { LlmCompleteEvent, LlmErrorEvent, LlmNoticeEvent, LlmStartEvent, LlmTokenEvent } from "../types/llm";
 
 // Check if running inside native Tauri runtime
 export const isTauri = (): boolean => {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 };
 
-// Default fallback configuration for standalone / browser preview
+// Defaults, identical to the backend (checked against src-tauri/tests/fixtures/default_config.json).
 export const DEFAULT_CONFIG: AppConfig = {
+  config_version: 2,
   anti_capture_enabled: true,
   focus_shield_enabled: true,
   opacity: 0.92,
@@ -32,30 +33,30 @@ export const DEFAULT_CONFIG: AppConfig = {
   stt_provider: "local_whisper",
   whisper_model_path: "",
   whisper_model_size: "base.en",
-  deepgram_api_key: "",
-  groq_api_key: "",
   groq_whisper_model: "whisper-large-v3-turbo",
-  llm_provider: "openrouter",
-  openrouter_api_key: "",
-  openrouter_model: "deepseek/deepseek-chat",
-  gemini_api_key: "",
+  llm_provider: "gemini",
   gemini_model: "gemini-2.5-flash",
   ollama_endpoint: "http://localhost:11434",
-  ollama_model: "qwen2.5-coder:7b",
-  openai_api_key: "",
+  ollama_model: "",
   openai_model: "gpt-4o",
   openai_base_url: "https://api.openai.com/v1",
-  anthropic_api_key: "",
-  anthropic_model: "claude-3-5-sonnet-20241022",
-  deepseek_api_key: "",
+  anthropic_model: "claude-opus-5-5",
   deepseek_model: "deepseek-chat",
+  groq_model: "llama-3.3-70b-versatile",
   custom_endpoint: "",
-  custom_api_key: "",
   custom_model: "",
-  target_role: "Staff Software Engineer",
-  job_description: "Distributed systems, Rust, TypeScript, high-throughput pipelines, and system design.",
-  candidate_resume: "Principal/Staff software engineer with deep expertise in low-latency backend systems, event-driven architectures, and modern web applications.",
+  openrouter_model: "deepseek/deepseek-chat",
+  code_models: {},
+  smart_model_routing: false,
+  target_role: "Senior Software Engineer",
+  company_name: "",
+  interview_title: "",
+  job_description: "Full Stack / Distributed Systems Engineer. Tech: Rust, TypeScript, React, System Design, Algorithms.",
+  candidate_resume:
+    "Experienced engineer with 6+ years in backend systems, high-concurrency microservices, TypeScript, and modern frontend frameworks.",
+  project_directory: "",
   project_directories: [],
+  project_context: "",
   system_prompt_override: "",
   auto_trigger_enabled: true,
   auto_trigger_delay_ms: 1500,
@@ -65,7 +66,96 @@ export const DEFAULT_CONFIG: AppConfig = {
   max_context_turns: 10,
 };
 
+/** Browser preview only: settings from storage, with defaults filled in and any key field removed. */
+function withoutKeys(raw: unknown): AppConfig {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const kept = Object.fromEntries(Object.entries(source).filter(([name]) => !name.endsWith("_api_key")));
+  return { ...DEFAULT_CONFIG, ...kept, config_version: 2 } as AppConfig;
+}
+
+export type KeyId =
+  | "openrouter"
+  | "gemini"
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "groq"
+  | "custom"
+  | "deepgram";
+
+export const KEY_IDS: KeyId[] = [
+  "openrouter",
+  "gemini",
+  "openai",
+  "anthropic",
+  "deepseek",
+  "groq",
+  "custom",
+  "deepgram",
+];
+
+export interface ProviderTestResult {
+  ok: boolean;
+  kind: string | null;
+  message: string;
+  model: string;
+  latency_ms: number;
+}
+
+export interface ModelInfo {
+  id: string;
+  vision: boolean | null;
+}
+
+// Browser preview only: keys are held in memory for the page lifetime and never persisted.
+const previewKeys = new Map<KeyId, string>();
+
 export const TauriApi = {
+  // Provider keys (stored by the backend in Windows Credential Manager; values are never read back)
+  async getKeyStatus(): Promise<Record<KeyId, boolean>> {
+    if (!isTauri()) {
+      return Object.fromEntries(KEY_IDS.map((id) => [id, previewKeys.has(id)])) as Record<KeyId, boolean>;
+    }
+    const status = await invoke<Partial<Record<KeyId, boolean>>>("get_key_status");
+    return Object.fromEntries(KEY_IDS.map((id) => [id, status?.[id] === true])) as Record<KeyId, boolean>;
+  },
+
+  async setProviderKey(keyId: KeyId, value: string): Promise<void> {
+    if (!value.trim()) {
+      throw new Error("Enter a key before saving.");
+    }
+    if (!isTauri()) {
+      previewKeys.set(keyId, value.trim());
+      return;
+    }
+    await invoke("set_provider_key", { keyId, value });
+  },
+
+  async clearProviderKey(keyId: KeyId): Promise<void> {
+    if (!isTauri()) {
+      previewKeys.delete(keyId);
+      return;
+    }
+    await invoke("clear_provider_key", { keyId });
+  },
+
+  async testLlmProvider(provider: string): Promise<ProviderTestResult> {
+    if (!isTauri()) {
+      return { ok: false, kind: "unreachable", message: "Provider tests run in the desktop app only.", model: "", latency_ms: 0 };
+    }
+    return await invoke<ProviderTestResult>("test_llm_provider", { provider });
+  },
+
+  async listProviderModels(provider: string): Promise<ModelInfo[]> {
+    if (!isTauri()) return [];
+    return await invoke<ModelInfo[]>("list_provider_models", { provider });
+  },
+
+  async getConfigNotice(): Promise<string | null> {
+    if (!isTauri()) return null;
+    return await invoke<string | null>("get_config_notice");
+  },
+
   // Window & Stealth
   async setAntiCapture(enabled: boolean): Promise<boolean> {
     if (!isTauri()) return enabled;
@@ -142,16 +232,20 @@ export const TauriApi = {
   // Config
   async getConfig(): Promise<AppConfig> {
     if (!isTauri()) {
-      const saved = localStorage.getItem("ghostcue_config");
-      return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+      try {
+        return withoutKeys(JSON.parse(localStorage.getItem("ghostcue_config") ?? "null"));
+      } catch {
+        return withoutKeys(null);
+      }
     }
     return await invoke<AppConfig>("get_app_config");
   },
 
   async saveConfig(config: AppConfig): Promise<AppConfig> {
     if (!isTauri()) {
-      localStorage.setItem("ghostcue_config", JSON.stringify(config));
-      return config;
+      const clean = withoutKeys(config);
+      localStorage.setItem("ghostcue_config", JSON.stringify(clean));
+      return clean;
     }
     return await invoke<AppConfig>("save_app_config", { newConfig: config });
   },
@@ -217,11 +311,13 @@ export const TauriApi = {
     await invoke("clear_transcript_history");
   },
 
-  async getAvailableWhisperModels(): Promise<Array<{ name: string; url: string; size: string }>> {
+  async getAvailableWhisperModels(): Promise<
+    Array<{ name: string; url: string; size: string; downloaded?: boolean; path?: string }>
+  > {
     if (!isTauri()) {
       return [
         { name: "tiny.en", url: "", size: "75 MB" },
-        { name: "base.en", url: "", size: "142 MB" },
+        { name: "base.en", url: "", size: "142 MB", downloaded: true, path: "preview/ggml-base.en.bin" },
         { name: "small.en", url: "", size: "466 MB" },
         { name: "medium.en", url: "", size: "1.5 GB" },
       ];
@@ -338,6 +434,21 @@ export const TauriApi = {
   onLoopbackLevel(callback: (event: AudioLevelEvent) => void): Promise<UnlistenFn> {
     if (!isTauri()) return Promise.resolve(() => {});
     return listen<AudioLevelEvent>("audio-loopback-level", (event) => callback(event.payload));
+  },
+
+  onModelDownloadProgress(
+    callback: (event: { model: string; progress: number; downloaded: number; total: number }) => void
+  ): Promise<UnlistenFn> {
+    if (!isTauri()) return Promise.resolve(() => {});
+    return listen<{ model: string; progress: number; downloaded: number; total: number }>(
+      "model-download-progress",
+      (event) => callback(event.payload)
+    );
+  },
+
+  onLlmNotice(callback: (event: LlmNoticeEvent) => void): Promise<UnlistenFn> {
+    if (!isTauri()) return Promise.resolve(() => {});
+    return listen<LlmNoticeEvent>("llm-notice", (event) => callback(event.payload));
   },
 
   onLlmStart(callback: (event: LlmStartEvent) => void): Promise<UnlistenFn> {
